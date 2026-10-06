@@ -1,0 +1,14 @@
+**
+!pyproject.toml
+!uv.lock
+!src/
+!src/med_ask/
+!src/med_ask/*.py
+!frontend/
+!frontend/package.json
+!frontend/package-lock.json
+!frontend/index.html
+!frontend/vite.config.js
+!frontend/src/
+!frontend/src/*.jsx
+!frontend/src/*.css
