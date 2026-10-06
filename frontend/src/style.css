@@ -1,0 +1,29 @@
+:root {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #21352d;
+  background: #f6f7f3;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 280px; }
+main { width: min(100% - 3rem, 760px); margin: 14vh auto 3rem; }
+.eyebrow { font-size: .72rem; letter-spacing: .15em; color: #53675e; }
+h1 { font-size: clamp(2.6rem, 6vw, 4rem); letter-spacing: -.06em; margin: 1rem 0; }
+.intro { color: #53675e; font-size: 1.25rem; margin-bottom: 3rem; }
+form { padding: 2rem; border: 1px solid #d7ded6; border-radius: 16px; background: #fff; }
+label { display: block; font-weight: 600; margin-bottom: 1rem; }
+.search-row { display: flex; gap: .75rem; }
+input, button { font: inherit; border-radius: 8px; min-height: 48px; }
+input { flex: 1; min-width: 0; padding: .8rem 1rem; border: 1px solid #a6b5aa; }
+button { background: #285c44; color: #fff; border: 0; padding: .8rem 1.4rem; cursor: pointer; }
+button:hover { background: #1c4632; }
+input:focus-visible, button:focus-visible { outline: 3px solid #7aa991; outline-offset: 3px; }
+.note { font-size: .85rem; color: #53675e; margin-bottom: 0; }
+
+@media (max-width: 520px) {
+  main { width: calc(100% - 2rem); margin-top: 8vh; }
+  form { padding: 1.25rem; }
+  .search-row { flex-direction: column; }
+}
