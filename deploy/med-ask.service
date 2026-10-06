@@ -1,0 +1,18 @@
+[Unit]
+Description=med-ask textbook search
+ConditionPathIsMountPoint=/srv/homelab
+Requires=docker.service
+After=docker.service homelab-data.target tailscaled.service
+PartOf=homelab-data.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/srv/homelab/med-ask
+ExecStartPre=-/usr/bin/git -C /srv/homelab/med-ask pull --ff-only origin main
+ExecStart=/usr/bin/docker compose -f /srv/homelab/med-ask/compose.yaml up -d --build --remove-orphans
+ExecStop=/usr/bin/docker compose -f /srv/homelab/med-ask/compose.yaml down
+TimeoutStartSec=0
+
+[Install]
+WantedBy=homelab-data.target

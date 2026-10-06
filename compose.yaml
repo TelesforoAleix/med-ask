@@ -2,9 +2,12 @@ services:
   app:
     build: .
     ports:
-      - "127.0.0.1:8100:8100"
+      - "${APP_BIND_ADDRESS:-127.0.0.1}:8100:8100"
     environment:
       DATABASE_URL: "postgresql://medask:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/medask"
+    volumes:
+      - ${SOURCES_PATH:-sources-empty}:/data/sources:ro
+      - ${ORIGINALS_PATH:-originals-empty}:/data/originals
     depends_on:
       postgres:
         condition: service_healthy
@@ -21,7 +24,7 @@ services:
       POSTGRES_DB: medask
       POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}"
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      - ${POSTGRES_DATA_PATH:-postgres-data}:/var/lib/postgresql/data
       - ./postgres/init.sql:/docker-entrypoint-initdb.d/01-vector.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U medask -d medask"]
@@ -32,3 +35,5 @@ services:
 
 volumes:
   postgres-data:
+  sources-empty:
+  originals-empty:
