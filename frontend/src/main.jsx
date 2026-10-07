@@ -24,6 +24,9 @@ function App() {
         </div>
         <p id="search-note" className="note">Search is not connected yet.</p>
       </form>
+      <footer className="note">
+        <a href="https://github.com/TelesforoAleix/med-ask">Source code · AGPL-3.0</a>
+      </footer>
     </main>
   )
 }
