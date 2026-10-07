@@ -561,6 +561,26 @@ def test_shaded_table_cells_do_not_become_paragraphs(tmp_path):
     assert "cell" not in result.passages[0].text
 
 
+def test_table_title_above_shading_excludes_cells_and_small_footnote(tmp_path):
+    path = tmp_path / "synthetic.pdf"
+    with pymupdf.open() as doc:
+        page = doc.new_page(width=600, height=800)
+        page.insert_text((50, 165), "Table 2 Synthetic entries", fontsize=11)
+        page.draw_rect(pymupdf.Rect(50, 180, 550, 300), fill=(0.8, 0.8, 0.9))
+        for y in (210, 240, 270):
+            for x in (60, 250):
+                page.insert_text((x, y), "Synthetic cell description.", fontsize=10)
+        page.insert_text((60, 315), "Synthetic table footnote.", fontsize=9)
+        page.insert_text(
+            (50, 400), "A synthetic body paragraph ends here.", fontsize=11
+        )
+        doc.save(path)
+    result = extract(path)
+    assert [p.text for p in result.passages] == [
+        "A synthetic body paragraph ends here."
+    ]
+
+
 def test_caption_continuation_blocks_remain_a_caption(tmp_path):
     path = tmp_path / "synthetic.pdf"
     with pymupdf.open() as doc:

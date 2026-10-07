@@ -479,7 +479,13 @@ def _figure_boxes(
             box
             for box, _, _ in boxes
             if box.get_area() < area * 0.85
-            and box.contains((title.tl + title.br) / 2)
+            and (
+                box.contains((title.tl + title.br) / 2)
+                or (
+                    0 <= box.y0 - title.y1 <= block.size * 2
+                    and box.x0 - block.size <= title.x0 <= box.x1
+                )
+            )
             and box.y1 - title.y1 > block.size * 2
         ]
         if candidates:
@@ -519,6 +525,14 @@ def _figure_boxes(
                     min(title.x0, box.x0), title.y0, box.x1, min(bottom, box.y1)
                 )
             )
+            if body_size is not None:
+                for note in blocks:
+                    if (
+                        0 <= note.bbox[1] - box.y1 <= block.size * 2
+                        and note.size < body_size * 0.95
+                        and box.x0 <= note.bbox[0] < note.bbox[2] <= box.x1
+                    ):
+                        figures.append(pymupdf.Rect(note.bbox))
     for box, kind, count in boxes:
         if (
             box.get_area() >= area * 0.85
@@ -1172,6 +1186,7 @@ def extract_book(pdf_path: str | Path, book_id: str, language: str) -> Extractio
                     "contents",
                     "detailed contents",
                     "contenido",
+                    "resumen del contenido",
                 }
                 for title in bookmark_path
             ):
