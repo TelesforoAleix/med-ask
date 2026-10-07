@@ -1,9 +1,12 @@
 services:
   app:
+    image: med-ask-local
     build: .
     ports:
       - "${APP_BIND_ADDRESS:-127.0.0.1}:8100:8100"
+    networks: [backend]
     environment:
+      PRIVATE_ROUTES_ENABLED: "true"
       DATABASE_URL: "postgresql://medask:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/medask"
     volumes:
       - ${SOURCES_PATH:-sources-empty}:/data/sources:ro
@@ -11,14 +14,39 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    healthcheck:
+    healthcheck: &app-healthcheck
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8100/api/health', timeout=5)"]
       interval: 5s
       timeout: 6s
       retries: 12
       start_period: 10s
+  public:
+    image: med-ask-local
+    build: .
+    networks: [backend, tunnel]
+    environment:
+      PRIVATE_ROUTES_ENABLED: "false"
+      DATABASE_URL: "postgresql://medask:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/medask"
+    volumes:
+      - ${SOURCES_PATH:-sources-empty}:/data/sources:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck: *app-healthcheck
+  cloudflared:
+    image: cloudflare/cloudflared:2026.10.0
+    profiles: [tunnel]
+    command: ["tunnel", "--no-autoupdate", "run"]
+    environment:
+      TUNNEL_TOKEN: "${TUNNEL_TOKEN:-}"
+    networks: [tunnel]
+    depends_on:
+      public:
+        condition: service_healthy
+    restart: unless-stopped
   postgres:
     image: pgvector/pgvector:pg17
+    networks: [backend]
     environment:
       POSTGRES_USER: medask
       POSTGRES_DB: medask
@@ -37,3 +65,7 @@ volumes:
   postgres-data:
   sources-empty:
   originals-empty:
+
+networks:
+  backend:
+  tunnel:

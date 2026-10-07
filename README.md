@@ -55,6 +55,8 @@ PR; no stack is run locally on the Mac.
 For a non-Compose environment, the app reads `DATABASE_URL` and optionally
 `FRONTEND_DIST` (the built assets directory) from the environment. Database
 credentials are runtime configuration and must never enter git or an image.
+Private routes are disabled unless `PRIVATE_ROUTES_ENABLED` is exactly `true`;
+unset, empty and malformed values leave them disabled.
 
 ## Running on the server
 
@@ -212,3 +214,38 @@ sudo rm -rf -- /srv/homelab/med-ask /srv/homelab/med-ask-data
 
 This removes only med-ask's clone and data. It leaves the encrypted volume, its
 unlock mechanism and the other project's files, services and containers intact.
+
+### Optional public tunnel
+
+Compose runs `app` and `public` from the same image. Both serve the search page
+and `/api/health`. `app` enables private routes, including the placeholder
+`GET /api/private/ping`, and keeps port 8100 on the configured Tailscale address.
+`public` disables private routes: every `/api/private/` path gives the same 404
+as an unknown API route. It mounts sources read-only and has no originals mount.
+Neither `public` nor the tunnel connector publishes a host port.
+
+Both application services can reach Postgres on the backend network. The
+`cloudflared` connector joins only the tunnel network shared with `public`; it
+cannot connect directly to `app` or Postgres. It connects outward to Cloudflare,
+so no new listener, firewall change or tailnet port is needed.
+
+The `cloudflared` service uses the `tunnel` Compose profile. It stays absent on
+hosts without that profile, including CI. The owner creates a dashboard-managed
+Cloudflared tunnel named `med-ask` under Zero Trust → Networks → Tunnels, copies
+the token from the displayed install command without running that command, and
+adds a published application route for their chosen hostname. Select service type
+HTTP and URL `public:8100` (equivalently `http://public:8100`). Keep the hostname,
+tunnel ID and token out of git, PRs and shared logs.
+
+Only the owner writes `TUNNEL_TOKEN` into the existing root-owned, mode `0600`
+server `.env`, without displaying it. After setup and merge, add
+`COMPOSE_PROFILES=tunnel` there and restart `med-ask.service`. The connector runs
+`tunnel --no-autoupdate run` and receives the token through its environment;
+never put it on the command line or print the environment file. The public URL
+is open during testing; the owner adds Cloudflare Access in the dashboard later.
+
+To turn the tunnel off, remove `COMPOSE_PROFILES` from the server `.env` and
+restart `med-ask.service`. The unit stops the stack before starting it again, so
+the connector is removed and `app` remains available over Tailscale. No data or
+volumes need to be removed. The owner may also remove `TUNNEL_TOKEN` to revoke
+the local configuration.

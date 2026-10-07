@@ -8,6 +8,7 @@ from med_ask import create_app
 
 @pytest.fixture
 def app(monkeypatch, tmp_path):
+    monkeypatch.delenv("PRIVATE_ROUTES_ENABLED", raising=False)
     monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.setenv("FRONTEND_DIST", str(tmp_path))
     app = create_app()
@@ -85,3 +86,41 @@ def test_unknown_api_routes_do_not_serve_react(app, path):
 def test_static_path_cannot_escape_build_directory(app):
     response = app.test_client().get("/../pyproject.toml")
     assert response.status_code == 404
+
+
+@pytest.mark.parametrize("setting", ["true", "false", None, "", "TRUE", "1", "invalid"])
+def test_private_boundary_and_shared_routes(app, monkeypatch, setting):
+    if setting is not None:
+        monkeypatch.setenv("PRIVATE_ROUTES_ENABLED", setting)
+    instance = create_app()
+    instance.config["TESTING"] = True
+    instance.config["DATABASE_URL"] = "postgresql://unused"
+    connect = MagicMock()
+    cursor = connect.return_value.__enter__.return_value.cursor.return_value
+    cursor.__enter__.return_value.fetchone.return_value = (True,)
+    monkeypatch.setattr("med_ask.psycopg.connect", connect)
+    (instance.config["FRONTEND_DIST"] / "index.html").write_text(
+        "<title>med-ask</title>"
+    )
+    client = instance.test_client()
+    assert client.get("/").status_code == 200
+    assert b"<title>med-ask</title>" in client.get("/").data
+    assert client.get("/api/health").status_code == 200
+    assert client.get("/api/health").json == {"postgres": "ok", "vector": "ok"}
+    unknown = client.get("/api/unknown")
+    ping = client.get("/api/private/ping")
+    if setting == "true":
+        assert ping.status_code == 200
+        assert ping.json == {"private": "ok"}
+    else:
+        for path in (
+            "/api/private/ping",
+            "/api/private/",
+            "/api/private/anything/deeper",
+        ):
+            for method in ("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"):
+                response = client.open(path, method=method)
+                assert response.status_code == unknown.status_code == 404
+                assert response.content_type == unknown.content_type
+                if method != "HEAD":
+                    assert response.data == unknown.data
