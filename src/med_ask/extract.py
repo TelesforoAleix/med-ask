@@ -193,7 +193,9 @@ def _read_blocks(page: pymupdf.Page) -> list[_Block]:
             if (
                 lines
                 and abs(lines[-1].bbox[1] - line.bbox[1]) < line.size * 0.35
-                and line.bbox[0] - lines[-1].bbox[2] < line.size * 1.2
+                and -line.size * 0.25
+                <= line.bbox[0] - lines[-1].bbox[2]
+                < line.size * 1.2
             ):
                 previous = lines[-1]
                 previous.text += " " + line.text
@@ -865,7 +867,7 @@ def _definitions(blocks: list[_Block], body_size: float, width: float) -> list[_
         for line in block.lines:
             new_column = (
                 previous is not None
-                and line.bbox[0] - previous.bbox[0] > width * 0.2
+                and previous.bbox[0] < width * 0.5 < line.bbox[0]
                 and line.bbox[1] < previous.bbox[1]
             )
             if new_column:
@@ -878,14 +880,25 @@ def _definitions(blocks: list[_Block], body_size: float, width: float) -> list[_
             at_margin = line.bbox[0] - column_left < body_size * 1.65
             starts = (
                 previous is not None
-                and at_margin
                 and (
-                    END_SENTENCE.search(previous.text)
-                    or (line.bold and len(line.text) < 160)
+                    (line.size >= body_size * 1.15 and len(line.text) < 160)
                     or (
-                        len(line.text) < 160
-                        and line.bbox[2] - line.bbox[0] < width * 0.35
-                        and not END_SENTENCE.search(line.text)
+                        line.bbox[0] - column_left < body_size * 0.9
+                        and len(line.text) < 160
+                    )
+                    or (
+                        at_margin
+                        and len(line.text.split()) <= 3
+                        and not re.search(r"\d", line.text)
+                        and (
+                            END_SENTENCE.search(previous.text)
+                            or (line.bold and len(line.text) < 160)
+                            or (
+                                len(line.text) < 160
+                                and line.bbox[2] - line.bbox[0] < width * 0.35
+                                and not END_SENTENCE.search(line.text)
+                            )
+                        )
                     )
                 )
                 and not (

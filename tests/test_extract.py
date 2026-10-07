@@ -999,3 +999,33 @@ def test_boxed_prose_with_displayed_formulas_remains_body(tmp_path):
         doc.save(path)
     result = extract(path)
     assert sum("synthetic body paragraph" in p.text for p in result.passages) == 6
+
+
+def test_ocr_glossary_terms_with_digits_keep_their_definitions(tmp_path):
+    path = tmp_path / "synthetic.pdf"
+    with pymupdf.open() as doc:
+        page = doc.new_page(width=600, height=800)
+        pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 600, 800))
+        pix.clear_with(240)
+        page.insert_image(page.rect, stream=pix.tobytes("png"))
+        for y, term in [(100, "Synthetic1"), (170, "Synthetic2")]:
+            page.insert_text((50, y), term, fontsize=11, render_mode=3)
+            page.insert_text(
+                (65, y + 14),
+                "A synthetic definition begins and continues on the following line",
+                fontsize=11,
+                render_mode=3,
+            )
+            page.insert_text(
+                (65, y + 28),
+                "with additional synthetic explanation",
+                fontsize=11,
+                render_mode=3,
+            )
+        doc.set_toc([[1, "Glossary", 1]])
+        doc.save(path)
+    result = extract(path)
+    assert len(result.passages) == 2
+    assert result.passages[0].text.startswith("Synthetic1")
+    assert result.passages[1].text.startswith("Synthetic2")
+    assert all(p.text.endswith("synthetic explanation") for p in result.passages)
