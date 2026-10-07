@@ -65,10 +65,26 @@ def passage_id(passage: Passage) -> str:
 
 
 def passage_nodes(passages: list[Passage], title: str) -> list[TextNode]:
-    """1. Give each extracted passage its stable id and complete source metadata.
+    """1. Compute stable ids from the unchanged extracted passages.
     2. Link the immediately adjacent passages only when their sections match.
-    3. Exclude all metadata from embedding text so only original text is sent.
+    3. Remove only NUL characters from text and every nested metadata string.
+    4. Exclude all metadata from embedding text so only source text is sent.
     """
+
+    def remove_nul(value):
+        """1. Remove only NUL from strings, including nested keys and values.
+        2. Preserve lists, tuples, dictionaries, and all other values.
+        """
+        if isinstance(value, str):
+            return value.replace("\x00", "")
+        if isinstance(value, dict):
+            return {remove_nul(k): remove_nul(v) for k, v in value.items()}
+        if isinstance(value, list):
+            return [remove_nul(v) for v in value]
+        if isinstance(value, tuple):
+            return tuple(remove_nul(v) for v in value)
+        return value
+
     nodes = []
     identities = [passage_id(p) for p in passages]
     for position, passage in enumerate(passages):
@@ -86,10 +102,11 @@ def passage_nodes(passages: list[Passage], title: str) -> list[TextNode]:
                 and passages[neighbour].section_path == passage.section_path
             ):
                 metadata[name] = identities[neighbour]
+        metadata = remove_nul(metadata)
         nodes.append(
             TextNode(
                 id_=identities[position],
-                text=passage.text,
+                text=remove_nul(passage.text),
                 metadata=metadata,
                 excluded_embed_metadata_keys=list(metadata),
             )
