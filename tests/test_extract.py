@@ -760,3 +760,51 @@ def test_inline_bold_continuation_is_not_a_heading(tmp_path):
     result = extract(path)
     assert len(result.passages) == 1
     assert result.passages[0].text.startswith("a synthetic term,")
+
+
+def test_figure_reference_continues_body_paragraph(tmp_path):
+    path = tmp_path / "synthetic.pdf"
+    with pymupdf.open() as doc:
+        page = doc.new_page(width=600, height=800)
+        pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 600, 800))
+        pix.clear_with(240)
+        page.insert_image(page.rect, stream=pix.tobytes("png"))
+        page.insert_text(
+            (50, 100), "A synthetic paragraph refers to", fontsize=11, render_mode=3
+        )
+        page.insert_text(
+            (50, 117),
+            "Figure 2-3 within the same sentence.",
+            fontsize=11,
+            render_mode=3,
+        )
+        doc.save(path)
+    result = extract(path)
+    assert len(result.passages) == 1
+    assert "Figure 2-3" in result.passages[0].text
+    assert not result.captions
+
+
+def test_labelled_table_inside_a_prose_image_patch_is_excluded(tmp_path):
+    path = tmp_path / "synthetic.pdf"
+    with pymupdf.open() as doc:
+        page = doc.new_page(width=600, height=800)
+        pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 500, 500))
+        pix.clear_with(240)
+        page.insert_image(pymupdf.Rect(50, 100, 550, 600), stream=pix.tobytes("png"))
+        page.insert_text(
+            (50, 120),
+            "A synthetic paragraph occupies this raster patch before the table.\n"
+            "Its second line also belongs to the same complete paragraph.",
+            fontsize=11,
+        )
+        page.insert_text((50, 400), "Table 1-2 Synthetic entries", fontsize=11)
+        page.insert_text((50, 440), "First row", fontsize=11)
+        page.insert_text((250, 440), "A synthetic cell has several words.", fontsize=11)
+        page.insert_text((50, 480), "Second row", fontsize=11)
+        page.insert_text((250, 480), "Another synthetic cell ends here.", fontsize=11)
+        doc.save(path)
+    result = extract(path)
+    assert len(result.passages) == 1
+    assert result.passages[0].text.startswith("A synthetic paragraph")
+    assert "Synthetic entries" not in result.passages[0].text

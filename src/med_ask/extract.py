@@ -419,7 +419,7 @@ def _figure_boxes(
     """1. Collect image objects and clustered vector drawings as figure candidates.
     2. Ignore scan backgrounds, thin rules, and simple borders around paragraphs.
     3. Group nearby small image components without enclosing body prose.
-    4. Preserve raster prose patches and exclude remaining graphics and ruled tables.
+    4. Preserve raster prose patches and exclude graphics, labelled tables, and rules.
     """
     area = page.rect.get_area()
     drawings = page.get_drawings()
@@ -461,6 +461,22 @@ def _figure_boxes(
         clusters.append(merged)
     boxes.extend((box, "image", 0) for box in clusters)
     figures = []
+    for block in blocks:
+        if not re.match(r"^(?:table|tabla)\s+\d+(?:[.\-–]\d+)*\b", block.text, re.I):
+            continue
+        title = pymupdf.Rect(block.bbox)
+        candidates = [
+            box
+            for box, _, _ in boxes
+            if box.get_area() < area * 0.85
+            and box.contains((title.tl + title.br) / 2)
+            and box.y1 - title.y1 > block.size * 2
+        ]
+        if candidates:
+            box = max(candidates, key=lambda rect: rect.x1)
+            figures.append(
+                pymupdf.Rect(min(title.x0, box.x0), title.y0, box.x1, box.y1)
+            )
     for box, kind, count in boxes:
         if (
             box.get_area() >= area * 0.85
@@ -864,8 +880,13 @@ def _heading(block: _Block, body_size: float) -> bool:
         and len(block.lines) <= 4
         and not CAPTION.match(block.text)
         and not END_SENTENCE.search(block.text)
-        and not block.text[:1].islower()
-        and not block.text.rstrip().endswith((",", ";"))
+        and (
+            block.size >= body_size * 1.15
+            or (
+                not block.text[:1].islower()
+                and not block.text.rstrip().endswith((",", ";"))
+            )
+        )
     )
 
 
