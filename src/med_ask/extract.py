@@ -233,13 +233,19 @@ def _margin_key(line: _Line) -> str:
 
 def _candidates(blocks: list[_Block], height: float) -> dict[tuple[str, int], str]:
     """1. Inspect only header and footer lines.
-    2. Collect whole number tokens at either end of each line, never PDF labels.
+    2. Read whole numbers or tightly spaced individual digits, never PDF labels.
     """
     numbers = {}
     for block in blocks:
         for line in block.lines:
             if _edge(line, height):
                 words = line.text.split()
+                if (
+                    1 < len(words) <= 5
+                    and all(re.fullmatch(r"[0-9]", word) for word in words)
+                    and line.bbox[2] - line.bbox[0] <= len(words) * line.size * 0.85
+                ):
+                    words = ["".join(words)]
                 for word in (words[0], words[-1]):
                     parsed = _number(word)
                     if parsed:
@@ -1093,7 +1099,7 @@ def extract_book(pdf_path: str | Path, book_id: str, language: str) -> Extractio
             for b in ordered
             if definitions
             or b.size
-            >= local_size * (0.94 if sources[index] == "inherited-ocr" else 0.88)
+            >= local_size * (0.85 if sources[index] == "inherited-ocr" else 0.88)
             or CAPTION.match(b.text)
             or _heading(b, local_size)
         ]

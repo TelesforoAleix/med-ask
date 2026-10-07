@@ -830,3 +830,43 @@ def test_hanging_entries_stay_separate_without_final_punctuation(tmp_path):
     assert len(result.passages) == 2
     assert result.passages[0].text.endswith("readable punctuation")
     assert result.passages[1].text.startswith("Synthetic second entry")
+
+
+def test_spaced_margin_digits_form_one_printed_number(pdf):
+    result = extract(
+        pdf(
+            [
+                [body("3 1 0", y=30), body("First synthetic paragraph ends here.")],
+                [body("3 1 1", y=30), body("Second synthetic paragraph ends here.")],
+            ]
+        )
+    )
+    assert [page.printed_page for page in result.pages] == ["310", "311"]
+    assert all(page.printed_page_method == "read" for page in result.pages)
+
+
+def test_inherited_ocr_retains_body_font_variation(tmp_path):
+    path = tmp_path / "synthetic.pdf"
+    with pymupdf.open() as doc:
+        page = doc.new_page(width=600, height=800)
+        pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 600, 800))
+        pix.clear_with(240)
+        page.insert_image(page.rect, stream=pix.tobytes("png"))
+        page.insert_text(
+            (50, 100),
+            "A long synthetic paragraph establishes the dominant body font here.\n"
+            "Another long synthetic line continues the paragraph to its ending.",
+            fontsize=9,
+            render_mode=3,
+        )
+        page.insert_text(
+            (50, 160),
+            "A smaller synthetic body paragraph is available in the inherited layer.",
+            fontsize=8,
+            render_mode=3,
+        )
+        doc.save(path)
+    result = extract(path)
+    assert len(result.passages) == 2
+    assert all(passage.inherited_ocr for passage in result.passages)
+    assert result.passages[1].text.startswith("A smaller synthetic body paragraph")
