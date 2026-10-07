@@ -2,7 +2,8 @@
 Description=med-ask textbook search
 ConditionPathIsMountPoint=/srv/homelab
 Requires=docker.service
-After=docker.service homelab-data.target tailscaled.service
+After=docker.service homelab-data.target tailscaled.service homelab.service
+Wants=homelab.service
 PartOf=homelab-data.target
 
 [Service]

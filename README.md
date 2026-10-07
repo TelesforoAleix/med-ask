@@ -1,10 +1,12 @@
 # med-ask
 
-med-ask is an evidence search across one medical student's textbooks, returning
-original passages with their book and page, referenced figures, and a short
-generated explanation visibly separated from the authors' words. This repository
-currently serves an empty search page and a database health route; it holds no
-books, extracted content, indexes, evaluation data or application state.
+med-ask searches original textbook passages, with their book, PDF page, printed
+page when known, and neighbouring source context. It generates no answers.
+Results come from a provisional search model and may change. Source pages render
+on request in a side panel; no page images are stored.
+
+The repository contains code only. Books, the book manifest, extracted passages,
+vectors, question logs and feedback live outside git.
 
 ## Local checks
 
@@ -34,6 +36,7 @@ starting. The environment file is ignored and excluded from the image build.
 ```sh
 cp .env.example .env
 # Edit .env to set POSTGRES_PASSWORD.
+docker network inspect homelab-models >/dev/null
 docker compose up -d --build --wait
 curl --fail http://127.0.0.1:8100/
 curl --fail http://127.0.0.1:8100/api/health
@@ -42,7 +45,7 @@ docker compose down
 
 Open `http://127.0.0.1:8100/` on that host. Flask serves the compiled React app
 and `/api/` from one container and origin, using Gunicorn as the WSGI server.
-Search is not connected yet. `/api/health` returns
+`/api/health` returns
 `{"postgres":"ok","vector":"ok"}` when Postgres is reachable and its vector
 extension exists; otherwise it returns HTTP 503. Unknown API routes return 404.
 
@@ -63,7 +66,8 @@ unset, empty and malformed values leave them disabled.
 The server uses an encrypted volume mounted at `/srv/homelab`, unlocked by hand
 after each boot. Unlocking starts `homelab-data.target`, which pulls in
 `med-ask.service`. The unit follows that target and orders itself after Docker
-and Tailscale. It does not start the target or unlock the volume. Failures appear
+and Tailscale, and wants and follows `homelab.service`, which creates the external
+`homelab-models` network. It does not start the target or unlock the volume. Failures appear
 in `systemctl status med-ask.service`; there is no failure notifier configured.
 
 All med-ask files live on that volume except the installed systemd unit:
@@ -72,7 +76,7 @@ All med-ask files live on that volume except the installed systemd unit:
 | --- | --- | --- |
 | `/srv/homelab/med-ask` | Root-owned clone of public `main`, including private `.env` | Image build context |
 | `/srv/homelab/med-ask-data/sources` | Textbook PDFs, owned by root and readable by the app | `/data/sources`, read-only |
-| `/srv/homelab/med-ask-data/originals` | Empty initially; future review resolutions, feedback and evaluation data that cannot be rebuilt | `/data/originals`, read-write |
+| `/srv/homelab/med-ask-data/originals` | Question-log exports and other non-rebuildable application records | `/data/originals`, read-write |
 | `/srv/homelab/med-ask-data/postgres` | Postgres data | `/var/lib/postgresql/data`, read-write |
 
 Prepare only while the volume is mounted. Stop if either deployment directory
@@ -224,7 +228,9 @@ and `/api/health`. `app` enables private routes, including the placeholder
 as an unknown API route. It mounts sources read-only and has no originals mount.
 Neither `public` nor the tunnel connector publishes a host port.
 
-Both application services can reach Postgres on the backend network. The
+Both application services can reach Postgres on the backend network and the
+embedding endpoint on `homelab-models`. The hand-run `ingest` service joins those
+same two networks and mounts sources read-only and originals read-write. The
 `cloudflared` connector joins only the tunnel network shared with `public`; it
 cannot connect directly to `app` or Postgres. It connects outward to Cloudflare,
 so no new listener, firewall change or tailnet port is needed.
@@ -242,10 +248,90 @@ server `.env`, without displaying it. After setup and merge, add
 `COMPOSE_PROFILES=tunnel` there and restart `med-ask.service`. The connector runs
 `tunnel --no-autoupdate run` and receives the token through its environment;
 never put it on the command line or print the environment file. The public URL
-is open during testing; the owner adds Cloudflare Access in the dashboard later.
+requires Cloudflare Access for search and feedback; the tunnel supplies the signed-in
+email header. The app trusts that header only in `public`, whose only external
+entry is the tunnel. Private `app` ignores it and records the asker as `tailnet`.
 
 To turn the tunnel off, remove `COMPOSE_PROFILES` from the server `.env` and
 restart `med-ask.service`. The unit stops the stack before starting it again, so
 the connector is removed and `app` remains available over Tailscale. No data or
 volumes need to be removed. The owner may also remove `TUNNEL_TOKEN` to revoke
 the local configuration.
+
+## Books, indexing and search
+
+Create `/data/sources/books.toml` outside the repository. The corresponding server
+path is `/srv/homelab/med-ask-data/sources/books.toml` (root:root, mode 0644).
+Use the format in `src/med_ask/books.example.toml`; its invented books are only an
+example:
+
+```toml
+[[books]]
+id = "sample-biology"
+filename = "Example - Biology.pdf"
+title = "Example - Biology"
+language = "English"
+```
+
+Ids are unique lowercase URL-safe identifiers. Filenames are PDF basenames in the
+sources directory; escaping paths and symlinks outside it are refused. The loader
+never chooses a book from a request-supplied filesystem path.
+
+The existing model stack owns the external `homelab-models` Docker network. Start
+that stack before med-ask. CI creates the network itself and tests search using
+synthetic PDFs and fake embeddings with a real pgvector database. Nothing calls
+the actual embedding endpoint in CI.
+
+`MODEL_BASE_URL` and `MODEL_API_KEY` configure the compatible endpoint, and
+`EMBEDDING_PURPOSE` defaults to `embed`. The endpoint's reported identity and
+probed dimensions determine the vector table. A changed model needs its own new
+index. Ingestion and questions currently embed plain text; separate passage and
+query functions allow a future role contract. LlamaIndex owns insertion and exact
+pgvector retrieval; there is no approximate vector index.
+
+Run one ingest at a time, manually and detached, choosing ids from the manifest:
+
+```sh
+docker compose --profile ingest run -d --rm ingest ingest sample-biology
+# The command prints a container id; progress and the final summary go to its log.
+docker logs --tail 20 <container-id>
+docker compose --profile ingest run --rm ingest status sample-biology
+# With no ids, status reports every manifest book against every recorded model.
+docker compose --profile ingest run --rm ingest status
+```
+
+Each passage has a hash of book id, PDF pages and original text. A repeated command
+skips stored passages. Each completed passage is committed, so interruption loses
+no committed progress. `status` counts current extracted passage ids against those
+stored. Ingesting on the shared CPU model slows searches in both projects; arrange
+long runs overnight with the owner. Before any ingest, search returns a clear
+"No index yet" response for the current model.
+
+`POST /api/search` accepts `{"question":"…"}` and returns the ten nearest original
+passages in similarity order, a question id, and embedding/search seconds. Each
+item includes labels, language, section, OCR provenance and at most one neighbour
+on either side in the same section. Neighbours are secondary context capped at
+120 words each. **from OCR — check the page** marks inherited OCR. Review source
+fetches `GET /api/page/<book-id>/<one-based-pdf-page>` as an approximately
+1,000-pixel-wide PNG held only in memory, with private one-hour cache headers.
+
+Every valid question is logged before attempting search, including attempts when
+no index exists. The app creates its own bookkeeping tables if absent. The log
+stores the question, asker, timestamp, vector table used, returned evidence ids,
+scores and labels, and optional feedback. It helps the owner review and improve
+search; no grading or generated answer is stored. The UI offers thumbs up/down,
+an optional comment, and Save feedback. `POST /api/feedback` updates only the
+requester's own existing question id; private users share the literal `tailnet`
+identity. In `public` a missing Access email header is rejected, and two Access
+identities cannot update one another's feedback. Keep `public` reachable only
+through the Access-protected tunnel; its email header is trusted on that boundary.
+
+Export the whole question log by hand:
+
+```sh
+docker compose --profile ingest run --rm ingest export-questions
+```
+
+The command creates a uniquely named JSON Lines file under `/data/originals/` and
+prints its path and byte size. It overwrites nothing. Only `app` and `ingest` mount
+originals; `public` has no access. No exports or ingests are scheduled.

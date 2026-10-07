@@ -27,3 +27,36 @@ input:focus-visible, button:focus-visible { outline: 3px solid #7aa991; outline-
   form { padding: 1.25rem; }
   .search-row { flex-direction: column; }
 }
+
+main { width: min(100% - 3rem, 920px); margin-top: 5vh; }
+.intro { margin-bottom: 2rem; }
+button:disabled { opacity: .6; cursor: wait; }
+article { padding: 1.5rem 2rem; background: #fff; border: 1px solid #d7ded6; border-radius: 12px; margin: 1.25rem 0; }
+article h3 { margin-top: 0; }
+.source-label, .note { overflow-wrap: anywhere; }
+.passage-heading { font-weight: 600; }
+blockquote { margin: 1rem 0; white-space: pre-wrap; line-height: 1.6; overflow-wrap: anywhere; }
+.passage { border-left: 3px solid #285c44; padding-left: 1rem; }
+.neighbour { color: #53675e; font-size: .9rem; padding-left: 1rem; border-left: 2px solid #d7ded6; }
+.neighbour p { margin: .5rem 0; }
+.ocr { display: inline-block; background: #fff0cb; padding: .4rem .6rem; border-radius: 4px; }
+.secondary { background: #e8efe9; color: #21352d; }
+.secondary:hover { background: #d7e5dc; }
+.asked { font-weight: 600; overflow-wrap: anywhere; }
+.error { color: #963a2d; }
+.thumbs { display: flex; flex-wrap: wrap; gap: .75rem; margin-bottom: 1.5rem; }
+.thumbs button { background: #e8efe9; color: #21352d; border: 2px solid transparent; }
+.thumbs button[aria-pressed="true"] { border-color: #285c44; background: #cee1d4; }
+textarea { width: 100%; min-height: 100px; font: inherit; border: 1px solid #a6b5aa; border-radius: 8px; padding: .8rem; margin-bottom: 1rem; }
+textarea:focus-visible { outline: 3px solid #7aa991; outline-offset: 3px; }
+.panel-backdrop { position: fixed; inset: 0; background: #132b2040; z-index: 10; }
+.source-panel { position: absolute; right: 0; top: 0; bottom: 0; width: min(65vw, 1000px); background: #f6f7f3; box-shadow: -8px 0 30px #132b2040; overflow-y: auto; padding: 1.5rem; }
+.panel-heading { display: flex; align-items: center; gap: 1rem; justify-content: space-between; }
+.panel-heading h2 { font-size: 1.2rem; }
+.source-panel img { width: 100%; height: auto; display: block; }
+.page-controls { display: flex; align-items: center; gap: .5rem; margin-bottom: 1rem; }
+@media (max-width: 680px) {
+  .source-panel { width: 100%; padding: 1rem; }
+  article { padding: 1.25rem; }
+  .page-controls { flex-wrap: wrap; }
+}
