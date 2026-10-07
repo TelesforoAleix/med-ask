@@ -803,8 +803,12 @@ def test_labelled_table_inside_a_prose_image_patch_is_excluded(tmp_path):
         page.insert_text((250, 440), "A synthetic cell has several words.", fontsize=11)
         page.insert_text((50, 480), "Second row", fontsize=11)
         page.insert_text((250, 480), "Another synthetic cell ends here.", fontsize=11)
+        page.insert_text(
+            (50, 550), "A synthetic paragraph follows the table.", fontsize=11
+        )
         doc.save(path)
     result = extract(path)
-    assert len(result.passages) == 1
+    assert len(result.passages) == 2
     assert result.passages[0].text.startswith("A synthetic paragraph")
     assert "Synthetic entries" not in result.passages[0].text
+    assert result.passages[1].text == "A synthetic paragraph follows the table."

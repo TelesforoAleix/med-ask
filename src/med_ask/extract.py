@@ -474,8 +474,40 @@ def _figure_boxes(
         ]
         if candidates:
             box = max(candidates, key=lambda rect: rect.x1)
+            rows: list[list[_Line]] = []
+            for line in sorted(
+                (
+                    line
+                    for candidate in blocks
+                    for line in candidate.lines
+                    if line.bbox[1] >= title.y1
+                    and box.contains(
+                        (pymupdf.Rect(line.bbox).tl + pymupdf.Rect(line.bbox).br) / 2
+                    )
+                ),
+                key=lambda line: line.bbox[1],
+            ):
+                if not rows or line.bbox[1] - rows[-1][0].bbox[1] > line.size * 0.6:
+                    rows.append([])
+                rows[-1].append(line)
+            bottom = title.y1
+            for index, row in enumerate(rows):
+                separated_cells = (
+                    max(line.bbox[0] for line in row)
+                    - min(line.bbox[0] for line in row)
+                    > box.width * 0.08
+                )
+                if (
+                    index
+                    and row[0].bbox[1] - bottom > block.size * 1.3
+                    and not separated_cells
+                ):
+                    break
+                bottom = max(bottom, max(line.bbox[3] for line in row))
             figures.append(
-                pymupdf.Rect(min(title.x0, box.x0), title.y0, box.x1, box.y1)
+                pymupdf.Rect(
+                    min(title.x0, box.x0), title.y0, box.x1, min(bottom, box.y1)
+                )
             )
     for box, kind, count in boxes:
         if (
@@ -1106,7 +1138,15 @@ def extract_book(pdf_path: str | Path, book_id: str, language: str) -> Extractio
                 continue
             section = tuple(bookmark_path + [title for _, title in heading_path])
             if any(
-                title.strip().casefold() in {"index", "índice"}
+                title.strip().casefold()
+                in {
+                    "index",
+                    "índice",
+                    "content",
+                    "contents",
+                    "detailed contents",
+                    "contenido",
+                }
                 for title in bookmark_path
             ):
                 continue
