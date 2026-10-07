@@ -812,3 +812,21 @@ def test_labelled_table_inside_a_prose_image_patch_is_excluded(tmp_path):
     assert result.passages[0].text.startswith("A synthetic paragraph")
     assert "Synthetic entries" not in result.passages[0].text
     assert result.passages[1].text == "A synthetic paragraph follows the table."
+
+
+def test_hanging_entries_stay_separate_without_final_punctuation(tmp_path):
+    path = tmp_path / "synthetic.pdf"
+    with pymupdf.open() as doc:
+        page = doc.new_page(width=600, height=800)
+        for x, y, text in [
+            (50, 100, "Synthetic first entry begins here"),
+            (62, 114, "and ends without readable punctuation"),
+            (50, 128, "Synthetic second entry begins here"),
+            (62, 142, "and ends on its following line."),
+        ]:
+            page.insert_text((x, y), text, fontsize=11)
+        doc.save(path)
+    result = extract(path)
+    assert len(result.passages) == 2
+    assert result.passages[0].text.endswith("readable punctuation")
+    assert result.passages[1].text.startswith("Synthetic second entry")

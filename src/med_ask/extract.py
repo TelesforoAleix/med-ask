@@ -347,7 +347,11 @@ def _paragraphs(block: _Block, split_titles: bool = True) -> list[_Block]:
                 or (
                     at_left
                     and previous.bbox[0] - line.bbox[0] > block.size * 0.7
-                    and END_SENTENCE.search(previous.text)
+                    and (
+                        END_SENTENCE.search(previous.text)
+                        or len(groups[-1]) >= 2
+                        or (previous.text[:1].islower() and line.text[:1].isupper())
+                    )
                 )
                 or bool(LIST_START.match(line.text))
                 or line.bbox[1] - previous.bbox[3]
@@ -756,6 +760,15 @@ def _coalesce(
                     )
                 )
             )
+            hanging_reset = (
+                len(previous.lines) >= 2
+                and all(
+                    line.bbox[0] - previous.lines[0].bbox[0] > body_size * 0.5
+                    for line in previous.lines[1:]
+                )
+                and first.bbox[0] <= previous.lines[0].bbox[0] + body_size * 0.5
+                and last.bbox[0] - first.bbox[0] > body_size * 0.7
+            )
             if (
                 (
                     same_column
@@ -798,6 +811,7 @@ def _coalesce(
                     )
                 )
                 and not LIST_START.match(block.text)
+                and not hanging_reset
                 and (
                     hanging
                     or overlapping_fragment
