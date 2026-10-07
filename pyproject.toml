@@ -3,7 +3,13 @@ name = "med-ask"
 version = "0.1.0"
 description = "Evidence search across a student's textbooks"
 requires-python = ">=3.13"
-dependencies = ["flask>=3.1,<4", "gunicorn>=23,<24", "psycopg[binary]>=3.2,<4"]
+license = "AGPL-3.0-only"
+dependencies = [
+    "flask>=3.1,<4",
+    "gunicorn>=23,<24",
+    "psycopg[binary]>=3.2,<4",
+    "pymupdf>=1.26,<2",
+]
 
 [build-system]
 requires = ["hatchling"]
