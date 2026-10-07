@@ -429,10 +429,11 @@ def _figure_boxes(
     """1. Collect image objects and clustered vector drawings as figure candidates.
     2. Ignore scan backgrounds, thin rules, and simple borders around paragraphs.
     3. Group nearby small image components without enclosing body prose.
-    4. Preserve raster prose patches and exclude graphics, labelled tables, and rules.
+    4. Preserve body prose patches; exclude graphics, small annotations, and tables.
     """
     area = page.rect.get_area()
     drawings = page.get_drawings()
+    book_body_size = body_size
     if body_size is not None:
         body_size = _body_size(blocks, body_size, page.rect.width)
     boxes = [
@@ -558,9 +559,17 @@ def _figure_boxes(
             for line in prose
             if body_size is not None and abs(line.size - body_size) <= body_size * 0.12
         ]
-        if _tabular(box, blocks) and (
-            box.height < page.rect.height * 0.65 or len(body_prose) < 5
+        if (
+            kind == "image"
+            and book_body_size is not None
+            and box.height < page.rect.height * 0.12
+            and box.width < page.rect.width * 0.5
+            and prose
+            and all(line.size < book_body_size * 0.94 for line in prose)
         ):
+            figures.append(box)
+            continue
+        if _tabular(box, blocks) and len(body_prose) < 5:
             figures.append(box)
             continue
         if (
@@ -892,6 +901,40 @@ def _definitions(blocks: list[_Block], body_size: float, width: float) -> list[_
     return [_block(lines, 0) for lines in groups]
 
 
+def _bibliography(blocks: list[_Block], body_size: float) -> list[_Block]:
+    """1. Preserve ordinary blocks until the bibliography heading is reached.
+    2. Start a reference at an author name followed by initials, or at a heading.
+    3. Attach continuation lines while preserving captions and later exercise blocks.
+    """
+    result: list[_Block] = []
+    active = False
+    author = re.compile(r"^[A-Z][\w’'\-]+,?\s+[A-Z]{1,3}(?:[.,&\s]|\()")
+    for block in blocks:
+        title = block.text.strip().casefold()
+        if title in {"references", "bibliography", "bibliografía", "bibliografia"}:
+            active = True
+            result.append(block)
+            continue
+        if title in {"problems", "problemas"}:
+            active = False
+        if not active or CAPTION.match(block.text) or _heading(block, body_size):
+            result.append(block)
+            continue
+        for line in block.lines:
+            if (
+                not result
+                or author.match(line.text)
+                or _heading(result[-1], body_size)
+                or CAPTION.match(result[-1].text)
+                or line.bbox[0] - result[-1].bbox[0] > body_size * 8
+                or line.bbox[1] - result[-1].bbox[3] > body_size * 2
+            ):
+                result.append(_block([line], block.source))
+            else:
+                result[-1] = _block(result[-1].lines + [line], result[-1].source)
+    return result
+
+
 def _reading_order(blocks: list[_Block], width: float) -> list[_Block]:
     """1. Separate full-width blocks as boundaries between horizontal bands.
     2. Group overlapping or aligned blocks into columns; read down them left to right.
@@ -1083,6 +1126,11 @@ def extract_book(pdf_path: str | Path, book_id: str, language: str) -> Extractio
             title.strip().casefold() in {"glossary", "glosario"}
             for title in bookmark_path
         )
+        references = any(
+            block.text.strip().casefold()
+            in {"references", "bibliography", "bibliografía", "bibliografia"}
+            for block in blocks
+        )
         cleaned = _clean_blocks(
             blocks,
             height,
@@ -1100,11 +1148,17 @@ def extract_book(pdf_path: str | Path, book_id: str, language: str) -> Extractio
         ordered = (
             _definitions(ordered, local_size, width)
             if definitions and (sources[index] == "inherited-ocr" or hanging_pairs >= 5)
+            else _bibliography(ordered, local_size)
+            if references and sources[index] == "inherited-ocr"
             else _coalesce(
                 ordered,
                 local_size,
                 width,
-                hanging_only=sources[index] != "inherited-ocr" or hanging_pairs >= 5,
+                hanging_only=(
+                    sources[index] != "inherited-ocr"
+                    or hanging_pairs >= 5
+                    or references
+                ),
             )
         )
         # Restrict prose to the book's body-font family, retaining enlarged headings.
@@ -1120,6 +1174,23 @@ def extract_book(pdf_path: str | Path, book_id: str, language: str) -> Extractio
         first_body = True
         last_block = None
         for block in body:
+            if (
+                sources[index] == "inherited-ocr"
+                and not definitions
+                and not CAPTION.match(block.text)
+            ):
+                letters = [c for c in block.text if c.isalpha()]
+                if (
+                    block.size < local_size * 0.94
+                    and block.bbox[2] - block.bbox[0] > width * 0.65
+                ) or (
+                    letters
+                    and sum(c.isupper() for c in letters) > len(letters) * 0.45
+                    and len(block.text) < 100
+                    and not END_SENTENCE.search(block.text)
+                    and not _heading(block, local_size)
+                ):
+                    continue
             caption = CAPTION.match(block.text)
             if caption:
                 captions.append(

@@ -916,3 +916,86 @@ def test_narrow_unrecognised_ocr_annotation_is_not_body(tmp_path):
     result = extract(path)
     assert len(result.passages) == 1
     assert "annotation" not in result.passages[0].text
+
+
+def test_wide_small_ocr_annotation_is_excluded_but_caption_is_kept(tmp_path):
+    path = tmp_path / "synthetic.pdf"
+    with pymupdf.open() as doc:
+        page = doc.new_page(width=600, height=800)
+        pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 600, 800))
+        pix.clear_with(240)
+        page.insert_image(page.rect, stream=pix.tobytes("png"))
+        page.insert_text(
+            (50, 100),
+            "A synthetic body paragraph establishes the main column and font.\n"
+            "Its second line completes the paragraph in the inherited layer.",
+            fontsize=11,
+            render_mode=3,
+        )
+        page.insert_text(
+            (50, 200),
+            "Unrecognised annotation text extends across nearly the entire page width. "
+            "More words fill the line.",
+            fontsize=10,
+            render_mode=3,
+        )
+        page.insert_text(
+            (50, 250),
+            "Figure 3 A recognised synthetic caption extends across the page width. "
+            "More words fill the line.",
+            fontsize=10,
+            render_mode=3,
+        )
+        doc.save(path)
+    result = extract(path)
+    assert len(result.passages) == 1
+    assert [caption.identifier for caption in result.captions] == ["3"]
+
+
+def test_inherited_bibliography_entries_have_separate_boundaries(tmp_path):
+    path = tmp_path / "synthetic.pdf"
+    with pymupdf.open() as doc:
+        page = doc.new_page(width=600, height=800)
+        pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 600, 800))
+        pix.clear_with(240)
+        page.insert_image(page.rect, stream=pix.tobytes("png"))
+        page.insert_text((50, 100), "REFERENCES", fontsize=16, render_mode=3)
+        for y, author in [(150, "Example AB"), (200, "Synthetic CD")]:
+            page.insert_text(
+                (50, y),
+                author + " (2000) A synthetic reference starts here",
+                fontsize=11,
+                render_mode=3,
+            )
+            page.insert_text(
+                (60, y + 14),
+                "A synthetic publication completes this reference",
+                fontsize=11,
+                render_mode=3,
+            )
+        doc.save(path)
+    result = extract(path)
+    assert len(result.passages) == 2
+    assert result.passages[0].text.startswith("Example AB")
+    assert result.passages[1].text.startswith("Synthetic CD")
+    assert all(p.text.endswith("completes this reference") for p in result.passages)
+
+
+def test_boxed_prose_with_displayed_formulas_remains_body(tmp_path):
+    path = tmp_path / "synthetic.pdf"
+    with pymupdf.open() as doc:
+        page = doc.new_page(width=600, height=800)
+        page.draw_rect(pymupdf.Rect(40, 100, 560, 550), color=(0, 0.5, 1))
+        for y in (130, 160, 190, 380, 410, 440):
+            page.insert_text(
+                (50, y),
+                "A synthetic body paragraph contains enough prose to remain readable.",
+                fontsize=11,
+            )
+        for y in (250, 280):
+            for x in (60, 240, 420):
+                page.insert_text((x, y), "A + B", fontsize=11)
+                page.draw_rect(pymupdf.Rect(x, y + 5, x + 20, y + 15))
+        doc.save(path)
+    result = extract(path)
+    assert sum("synthetic body paragraph" in p.text for p in result.passages) == 6
