@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 
 import psycopg
-from flask import Flask, abort, jsonify, send_from_directory
+from flask import Flask, abort, jsonify, request, send_from_directory
 from werkzeug.utils import safe_join
 
 
@@ -16,6 +16,19 @@ def create_app() -> Flask:
             "FRONTEND_DIST", str(Path(__file__).resolve().parents[2] / "frontend/dist")
         )
     ).resolve()
+
+    private_routes_enabled = os.environ.get("PRIVATE_ROUTES_ENABLED") == "true"
+
+    @app.before_request
+    def hide_private_routes():
+        if not private_routes_enabled and request.path.startswith("/api/private/"):
+            return jsonify(error="Unknown API route"), 404
+
+    if private_routes_enabled:
+
+        @app.get("/api/private/ping")
+        def private_ping():
+            return jsonify(private="ok")
 
     @app.get("/api/health")
     def health():

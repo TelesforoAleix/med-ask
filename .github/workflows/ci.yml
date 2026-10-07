@@ -64,9 +64,38 @@ jobs:
           assert health == {'postgres': 'ok', 'vector': 'ok'}, health
           print('\nHealth verified:', health)
           PY
+      - name: Prove private and public split without a tunnel token
+        run: |
+          docker compose exec -T public python - <<'PY'
+          import json
+          import urllib.error
+          import urllib.request
+          base = 'http://127.0.0.1:8100'
+          with urllib.request.urlopen(base + '/') as response:
+              assert response.status == 200
+              assert b'<title>med-ask</title>' in response.read()
+          with urllib.request.urlopen(base + '/api/health') as response:
+              assert json.load(response) == {'postgres': 'ok', 'vector': 'ok'}
+          for path in ('/api/private/ping', '/api/private/unknown', '/api/unknown'):
+              try:
+                  urllib.request.urlopen(base + path)
+              except urllib.error.HTTPError as response:
+                  assert response.code == 404
+                  assert json.load(response) == {'error': 'Unknown API route'}
+              else:
+                  raise AssertionError(path + ' was reachable')
+          PY
+          docker compose exec -T app python - <<'PY'
+          import json
+          import urllib.request
+          with urllib.request.urlopen('http://127.0.0.1:8100/api/private/ping') as response:
+              assert response.status == 200
+              assert json.load(response) == {'private': 'ok'}
+          PY
+          test -z "$(docker compose ps --all -q cloudflared)"
       - name: Print app logs on failure
         if: failure()
-        run: docker compose logs app
+        run: docker compose logs app public
       - name: Tear down throwaway stack
         if: always()
         run: docker compose down -v
