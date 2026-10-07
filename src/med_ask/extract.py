@@ -22,7 +22,9 @@ CAPTION = re.compile(
     re.IGNORECASE,
 )
 ROMAN = re.compile(r"M{0,3}(CM|CD|D?C{0,3})(XC|XL|L?X{0,3})(IX|IV|V?I{0,3})$")
-LIST_START = re.compile(r"^(?:\d+(?:[–\-]\d+)?[.)]?|[A-Za-z][.)]|\([A-Za-z]\))\s+")
+LIST_START = re.compile(
+    r"^(?:\d+[.)]|\d+[–\-]\d+(?=\s+[A-Z])|[A-Za-z][.)]|\([A-Za-z]\))\s+"
+)
 END_SENTENCE = re.compile(r"[.!?…][\s\"'’”\)\]]*$")
 TEXT_FLAGS = pymupdf.TEXTFLAGS_DICT & ~pymupdf.TEXT_PRESERVE_IMAGES
 
@@ -334,6 +336,7 @@ def _paragraphs(block: _Block, split_titles: bool = True) -> list[_Block]:
                     split_titles
                     and previous.bold
                     and not line.bold
+                    and not line.text[:1].islower()
                     and len(previous.text) < 100
                     and not END_SENTENCE.search(previous.text)
                     and (
@@ -538,25 +541,28 @@ def _figure_boxes(
                     band[-1].y1 + 3,
                 )
             )
+    for box, kind, _ in boxes:
+        if kind != "image" or box not in figures or box.width >= page.rect.width * 0.45:
+            continue
+        for block in blocks:
+            for line in block.lines:
+                rect = pymupdf.Rect(line.bbox)
+                if (
+                    len(line.text) < 100
+                    and not END_SENTENCE.search(line.text)
+                    and rect.width < box.width * 0.9
+                    and 0 <= rect.y0 - box.y1 < line.size * 1.5
+                    and box.x0 - line.size <= rect.x0 <= rect.x1 <= box.x1 + line.size
+                ):
+                    figures.append(rect)
     return figures
 
 
 def _in_figure(line: _Line, figures: list[pymupdf.Rect]) -> bool:
-    """1. Reject text whose centre lies inside a figure's object rectangle.
-    2. Exclude short, unfinished image labels immediately below a figure.
-    """
+    """1. Reject text whose centre lies inside a figure's object rectangle."""
     rect = pymupdf.Rect(line.bbox)
     centre = (rect.tl + rect.br) / 2
-    return any(
-        box.contains(centre)
-        or (
-            len(line.text) < 100
-            and not END_SENTENCE.search(line.text)
-            and 0 <= rect.y0 - box.y1 < line.size * 1.5
-            and box.x0 - line.size <= rect.x0 <= rect.x1 <= box.x1 + line.size
-        )
-        for box in figures
-    )
+    return any(box.contains(centre) for box in figures)
 
 
 def _without_figure_words(line: _Line, figures: list[pymupdf.Rect]) -> _Line | None:
@@ -714,7 +720,15 @@ def _coalesce(
                         < body_size * 3
                     )
                 )
-                and (not hanging_only or hanging or previous.source == block.source)
+                and (
+                    not hanging_only
+                    or hanging
+                    or previous.source == block.source
+                    or (
+                        not END_SENTENCE.search(previous.text)
+                        and (first.text[:1].islower() or first.text.startswith("("))
+                    )
+                )
                 and -body_size * 2 <= gap <= body_size
                 and abs(previous.size - block.size) < body_size * 0.15
                 and (hanging or not short_end)
@@ -727,7 +741,14 @@ def _coalesce(
                 and (hanging or not _heading(previous, body_size))
                 and not _heading(block, body_size)
                 and not CAPTION.match(previous.text)
-                and not CAPTION.match(block.text)
+                and (
+                    not CAPTION.match(block.text)
+                    or (
+                        not END_SENTENCE.search(previous.text)
+                        and block.size >= body_size * 0.94
+                        and previous.size >= body_size * 0.94
+                    )
+                )
                 and not LIST_START.match(block.text)
                 and (
                     hanging
@@ -763,14 +784,18 @@ def _definitions(blocks: list[_Block], body_size: float, width: float) -> list[_
                     for item in candidate.lines
                     if item.bbox[0] > width * 0.5
                 )
-            at_margin = line.bbox[0] - column_left < body_size * 1.3
+            at_margin = line.bbox[0] - column_left < body_size * 1.65
             starts = (
                 previous is not None
                 and at_margin
                 and (
                     END_SENTENCE.search(previous.text)
                     or (line.bold and len(line.text) < 160)
-                    or (len(line.text) < 160 and not END_SENTENCE.search(line.text))
+                    or (
+                        len(line.text) < 160
+                        and line.bbox[2] - line.bbox[0] < width * 0.35
+                        and not END_SENTENCE.search(line.text)
+                    )
                 )
                 and not (
                     len(groups[-1]) == 1
@@ -839,6 +864,8 @@ def _heading(block: _Block, body_size: float) -> bool:
         and len(block.lines) <= 4
         and not CAPTION.match(block.text)
         and not END_SENTENCE.search(block.text)
+        and not block.text[:1].islower()
+        and not block.text.rstrip().endswith((",", ";"))
     )
 
 

@@ -723,3 +723,40 @@ def test_bold_glossary_line_is_part_of_its_inline_definition(tmp_path):
     result = extract(path)
     assert len(result.passages) == 1
     assert result.passages[0].text.endswith("ends here.")
+
+
+def test_body_paragraph_below_a_wide_figure_keeps_its_first_line(tmp_path):
+    path = tmp_path / "synthetic.pdf"
+    with pymupdf.open() as doc:
+        page = doc.new_page(width=600, height=800)
+        page.draw_rect(pymupdf.Rect(50, 100, 550, 300))
+        page.insert_text((50, 314), "A synthetic paragraph starts here", fontsize=11)
+        page.insert_text((50, 327), "and finishes on its second line.", fontsize=11)
+        doc.save(path)
+    result = extract(path)
+    assert len(result.passages) == 1
+    assert result.passages[0].text.startswith("A synthetic paragraph starts here")
+
+
+def test_numeric_range_continues_a_paragraph(tmp_path):
+    path = tmp_path / "synthetic.pdf"
+    with pymupdf.open() as doc:
+        page = doc.new_page(width=600, height=800)
+        page.insert_text((50, 100), "A synthetic measurement ranges from", fontsize=11)
+        page.insert_text((50, 114), "20-40 units and ends here.", fontsize=11)
+        doc.save(path)
+    result = extract(path)
+    assert len(result.passages) == 1
+    assert "20-40 units" in result.passages[0].text
+
+
+def test_inline_bold_continuation_is_not_a_heading(tmp_path):
+    path = tmp_path / "synthetic.pdf"
+    with pymupdf.open() as doc:
+        page = doc.new_page(width=600, height=800)
+        page.insert_text((50, 100), "a synthetic term,", fontsize=11, fontname="hebo")
+        page.insert_text((50, 114), "continues within this paragraph.", fontsize=11)
+        doc.save(path)
+    result = extract(path)
+    assert len(result.passages) == 1
+    assert result.passages[0].text.startswith("a synthetic term,")
