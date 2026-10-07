@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 from dataclasses import asdict
@@ -20,6 +21,7 @@ from med_ask.retrieval import (
     ingest_status,
     model_table,
     neighbouring_passages,
+    passage_id,
     passage_nodes,
     search,
 )
@@ -120,6 +122,69 @@ def test_neighbours_cannot_cross_sections_and_are_capped():
     nodes[1].metadata["after"] = nodes[2].node_id
     store.get_nodes.return_value = [nodes[0], nodes[2]]
     assert len(neighbouring_passages(nodes[1], store)) == 1
+
+
+def test_passage_nodes_remove_nul_from_text_and_metadata(monkeypatch):
+    passage = make_passage(0, section=("one\x00",), text="Source\x00 text")
+    passage.printed_pages = ("7\x00", "8\x00")
+    passage.printed_page_reason = "Reason\x00"
+    # Exercise nested containers beyond the current source metadata schema.
+    monkeypatch.setattr(
+        "med_ask.retrieval.asdict",
+        lambda p: {
+            **asdict(p),
+            "nested": [{"key\x00": ("value\x00", ["deep\x00", 1, None])}],
+        },
+    )
+    node = passage_nodes([passage], "Title\x00")[0]
+    assert node.text == "Source text"
+    assert node.metadata["section_path"] == ("one",)
+    assert node.metadata["title"] == "Title"
+    assert node.metadata["printed_pages"] == ("7", "8")
+    assert node.metadata["printed_page_reason"] == "Reason"
+    assert node.metadata["label"] == "synthetic: pdf pages 1–2 <print pages: 7–8>"
+    assert node.metadata["nested"] == [{"key": ("value", ["deep", 1, None])}]
+    assert "\\u0000" not in json.dumps(node.metadata)
+    assert node.node_id == passage_id(passage)
+    assert passage_nodes([passage], "Title\x00")[0].node_id == node.node_id
+    assert passage.text == "Source\x00 text"
+    assert passage.section_path == ("one\x00",)
+
+
+def test_nul_free_passage_keeps_original_id_and_other_controls():
+    controls = "\x01\x08\t\n\r\x1f\x7f"
+    passage = make_passage(0, section=("one" + controls,), text="Source" + controls)
+    passage.printed_page_reason = "Reason" + controls
+    expected = hashlib.sha256(
+        json.dumps(
+            [passage.book_id, passage.pdf_pages, passage.text], ensure_ascii=False
+        ).encode()
+    ).hexdigest()
+    node = passage_nodes([passage], "Title" + controls)[0]
+    assert node.node_id == expected == passage_id(passage)
+    assert node.text == passage.text
+    assert node.metadata["section_path"] == passage.section_path
+    assert node.metadata["title"] == "Title" + controls
+    assert node.metadata["printed_page_reason"] == passage.printed_page_reason
+
+
+def test_neighbours_still_link_after_nul_removal():
+    nodes = passage_nodes(
+        [
+            make_passage(0, section=("one\x00",)),
+            make_passage(1, section=("one\x00",)),
+            make_passage(2, section=("two\x00",)),
+        ],
+        "Title",
+    )
+    assert nodes[0].metadata["after"] == nodes[1].node_id
+    assert nodes[1].metadata["before"] == nodes[0].node_id
+    assert "after" not in nodes[1].metadata
+    store = MagicMock()
+    store.get_nodes.return_value = [nodes[0]]
+    neighbours = neighbouring_passages(nodes[1], store)
+    assert len(neighbours) == 1
+    assert neighbours[0]["section_path"] == ("one",)
 
 
 @pytest.mark.parametrize(
