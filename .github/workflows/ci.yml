@@ -11,6 +11,18 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 127.0.0.1:5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      TEST_DATABASE_URL: postgresql://postgres@127.0.0.1:5432/postgres
     steps:
       - uses: actions/checkout@v4
         with:
@@ -50,6 +62,8 @@ jobs:
           from pathlib import Path
           Path('.env').write_text('POSTGRES_PASSWORD=' + secrets.token_hex(32) + '\n')
           PY
+      - name: Create external model network
+        run: docker network create homelab-models
       - name: Build and start stack
         run: docker compose up -d --build --wait --wait-timeout 120
       - name: Fetch search page and health
@@ -93,6 +107,27 @@ jobs:
               assert json.load(response) == {'private': 'ok'}
           PY
           test -z "$(docker compose ps --all -q cloudflared)"
+      - name: Exercise search and question logging with a fake embedding
+        run: |
+          docker compose exec -T app python - <<'PYCODE'
+          from med_ask import create_app
+          from med_ask.database import Database
+          from med_ask.embedding import Embedded
+          class FakeEndpoint:
+              def request(self, texts):
+                  return Embedded('synthetic-compose', [[1.0, 0.0]], 0.001)
+          app = create_app()
+          app.config['EMBEDDING_ENDPOINT'] = FakeEndpoint()
+          response = app.test_client().post('/api/search', json={'question': 'Synthetic question?'},
+              headers={'Cf-Access-Authenticated-User-Email': 'synthetic@example.invalid'})
+          assert response.status_code == 409, response.json
+          assert 'No index yet' in response.json['error']
+          db = Database(app.config['DATABASE_URL'])
+          with db.connect() as connection:
+              row = connection.execute('SELECT asker, evidence FROM medask_questions WHERE id=%s',
+                  (response.json['question_id'],)).fetchone()
+          assert row == ('tailnet', [])
+          PYCODE
       - name: Print app logs on failure
         if: failure()
         run: docker compose logs app public

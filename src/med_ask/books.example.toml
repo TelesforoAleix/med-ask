@@ -1,0 +1,12 @@
+# Invented catalogue; copy its format into /data/sources/books.toml outside git.
+[[books]]
+id = "sample-biology"
+filename = "Example - Biology.pdf"
+title = "Example - Biology"
+language = "English"
+
+[[books]]
+id = "sample-chemistry"
+filename = "Example - Chemistry.pdf"
+title = "Example - Chemistry"
+language = "Spanish"
