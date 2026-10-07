@@ -1137,6 +1137,12 @@ def extract_book(pdf_path: str | Path, book_id: str, language: str) -> Extractio
                 continue
             if (
                 len(block.text.split()) < 3
+                or (
+                    not definitions
+                    and block.bbox[2] - block.bbox[0] < width * 0.28
+                    and block.size <= local_size * 1.12
+                    and any(b.bbox[2] - b.bbox[0] > width * 0.4 for b in body)
+                )
                 or block.text.isupper()
                 or (
                     block.bbox[0] > width * 0.65

@@ -870,3 +870,29 @@ def test_inherited_ocr_retains_body_font_variation(tmp_path):
     assert len(result.passages) == 2
     assert all(passage.inherited_ocr for passage in result.passages)
     assert result.passages[1].text.startswith("A smaller synthetic body paragraph")
+
+
+def test_narrow_unrecognised_ocr_annotation_is_not_body(tmp_path):
+    path = tmp_path / "synthetic.pdf"
+    with pymupdf.open() as doc:
+        page = doc.new_page(width=600, height=800)
+        pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 600, 800))
+        pix.clear_with(240)
+        page.insert_image(page.rect, stream=pix.tobytes("png"))
+        page.insert_text(
+            (50, 100),
+            "A synthetic body paragraph has enough width to identify the main column.\n"
+            "Its next line completes the original paragraph in the inherited layer.",
+            fontsize=11,
+            render_mode=3,
+        )
+        page.insert_textbox(
+            pymupdf.Rect(420, 200, 570, 400),
+            "\n".join(["Unrecognised annotation words"] * 6),
+            fontsize=10,
+            render_mode=3,
+        )
+        doc.save(path)
+    result = extract(path)
+    assert len(result.passages) == 1
+    assert "annotation" not in result.passages[0].text
