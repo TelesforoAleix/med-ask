@@ -17,8 +17,8 @@ class Embedded:
 
 
 class Endpoint:
-    def __init__(self):
-        self.purpose = os.environ.get("EMBEDDING_PURPOSE", "embed")
+    def __init__(self, purpose=None):
+        self.purpose = purpose or os.environ.get("EMBEDDING_PURPOSE", "embed")
         self.client = OpenAI(
             base_url=os.environ["MODEL_BASE_URL"],
             api_key=os.environ["MODEL_API_KEY"],
