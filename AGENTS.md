@@ -17,7 +17,7 @@ the libraries, and keep those steps true when changing code. Plumbing (Flask
 routes, Compose, CI, configuration) and React follow ordinary conventions.
 
 Models are reached only through an OpenAI-compatible endpoint with base URL and
-key from the environment, using a purpose (`chat` or `embed`) in the `model` field.
+key from the environment, using a purpose (such as `chat`, `embed`, `grade` or `vision`) in the `model` field.
 Never name a model provider or model in this repository.
 
 Libraries own machinery: LlamaIndex owns ingestion, the index and retrieval.

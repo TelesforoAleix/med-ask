@@ -148,7 +148,6 @@ function App() {
           {group.evidence.map(item => <article key={item.id} id={`passage-${item.number}`}>
           <h4>Passage [{item.number}]</h4>
           <p className="source-label">{sourceLabel(item)}</p>
-          {item.inherited_ocr && <p className="ocr">from OCR — check the page</p>}
           {item.section_path.length > 0 && <p className="note">{item.section_path.join(' › ')}</p>}
           <p className="passage-heading">Original passage (in {item.language}):</p>
           {item.neighbours.filter(n => n.position === 'before').map(n =>

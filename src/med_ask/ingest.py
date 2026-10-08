@@ -16,6 +16,7 @@ from med_ask.evaluation import (
     run_eval,
 )
 from med_ask.manifest import load_manifest
+from med_ask.ocr import VisionEndpoint, queue_summary, read_book
 from med_ask.retrieval import ingest_book, ingest_status, search
 
 DEFAULT_EVAL_FILE = "/data/originals/eval/med-ask-eval.v1.jsonl"
@@ -56,8 +57,8 @@ def evaluate(args, parser):
 
 
 def main():
-    """1. Parse the ingest, status, export, or eval command and its arguments.
-    2. Initialize application bookkeeping in Postgres.
+    """1. Parse ingestion, status, export, eval, or page-reading arguments.
+    2. Initialize Postgres only for commands that need application bookkeeping.
     3. Run the selected operation and print progress and a final summary.
     """
     parser = argparse.ArgumentParser(description=__doc__)
@@ -65,6 +66,14 @@ def main():
     commands.add_parser("ingest").add_argument("books", nargs="+")
     commands.add_parser("status").add_argument("books", nargs="*")
     commands.add_parser("export-questions")
+    reading = commands.add_parser(
+        "ocr", help="Read failing pages, resuming kept readings"
+    )
+    reading.add_argument("books", nargs="+")
+    reading.add_argument("--limit", type=int, help="Maximum new pages per book")
+    commands.add_parser(
+        "ocr-queue", help="List failing pages without model calls"
+    ).add_argument("books", nargs="*")
     evaluation = commands.add_parser("eval")
     evaluation.add_argument(
         "--purpose", help="Embedding purpose to evaluate (default EMBEDDING_PURPOSE)"
@@ -87,8 +96,12 @@ def main():
     args = parser.parse_args()
     if args.command == "eval":
         raise SystemExit(evaluate(args, parser))
-    database = Database(os.environ["DATABASE_URL"])
-    database.ensure()
+    if args.command == "ocr" and args.limit is not None and args.limit < 1:
+        parser.error("--limit must be positive")
+    database = None
+    if args.command not in {"ocr", "ocr-queue"}:
+        database = Database(os.environ["DATABASE_URL"])
+        database.ensure()
     if args.command == "export-questions":
         try:
             path = database.export(Path("/data/originals"))
@@ -101,7 +114,15 @@ def main():
     if unknown:
         parser.error("Unknown book ids: " + ", ".join(sorted(unknown)))
     selected = [books[b] for b in args.books] if args.books else list(books.values())
-    if args.command == "status":
+    if args.command == "ocr":
+        endpoint = VisionEndpoint()
+        for book in selected:
+            if not read_book(book, endpoint, limit=args.limit):
+                raise SystemExit(3)
+        rows = [queue_summary(book) for book in selected]
+    elif args.command == "ocr-queue":
+        rows = [queue_summary(book) for book in selected]
+    elif args.command == "status":
         rows = ingest_status(selected, database)
     else:
         endpoint = Endpoint()

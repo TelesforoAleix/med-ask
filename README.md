@@ -323,7 +323,7 @@ the actual embedding endpoint in CI.
 
 `MODEL_BASE_URL` and `MODEL_API_KEY` configure the compatible endpoint, and
 `EMBEDDING_PURPOSE` defaults to `embed`. The endpoint's reported identity and
-probed dimensions and the code's index version (`v2`) determine the vector table.
+probed dimensions and `INDEX_VERSION` (default `v2`) determine the vector table.
 Tables use `e_v2_<model stem>_<model hash>` (Postgres adds `data_`). A changed
 model or index version needs its own new index; old tables and their rows remain.
 Search and the eval runner select the current version.
@@ -355,16 +355,111 @@ docker compose --profile ingest run --rm ingest status
 Each passage has a hash of book id, PDF pages and original text. A repeated command
 skips stored passages. Each completed passage is committed, so interruption loses
 no committed progress. `status` counts current extracted passage ids against those
-stored, for every recorded table, including previous versions. To switch versions
-on the server, pull the merged code and build the shared image with the first
-`docker compose --profile ingest run --build -d --rm ingest ingest <id>`.
-The running app and public containers keep their existing image and old index.
-Ingest all three books one at a time, then confirm stored = extracted for each
-book in the new table with `status`. Restart `med-ask.service` only after every
-book is complete and no ingest is running. Nothing deletes or overwrites the old
+stored, for every recorded table, including previous versions. To rebuild into a new version, wait for every existing ingest to finish before
+pulling code or rebuilding the shared image. Build with `docker compose build`;
+the running app and public containers keep their existing image and index. Pass
+`-e INDEX_VERSION=v3` to each new ingest, one book at a time, and confirm
+stored = extracted for every book in the new tables with `status`. Set
+`INDEX_VERSION=v3` in the server environment and restart `med-ask.service` only
+after every book is complete and no ingest is running. Compose passes the setting
+to app, public and ingest; search and eval use it too. Restoring `v2` and restarting
+selects the preserved old tables. Merging code alone keeps the app on `v2`. Nothing deletes or overwrites the old
 index. Ingesting on the shared CPU model slows searches in both projects; arrange
 long runs overnight with the owner. Before any ingest, search returns a clear
 "No index yet" response for the current model.
+
+### Reading pages with vision
+
+The external service is used only through the `vision` purpose at `MODEL_BASE_URL`,
+with `MODEL_API_KEY`. It must be serving throughout the reading run. Pages are sent
+one at a time, as in-memory `data:` PNGs at 300 DPI, temperature 0 and at most
+4,096 completion tokens. The fixed transcription prompt preserves the printed
+language and spelling, joins line-end hyphenation, separates paragraphs, and
+replaces figure interiors with `[FIGURE n]` followed by the printed caption.
+It uses no second model and never merges two readings.
+
+Every page is checked before a call. Born-digital publisher text is read only
+when it is nearly empty while the page shows ink. Readings and inherited OCR also
+get language, malformed-word and printed-number checks. Blank pages are kept.
+The inspectable thresholds in `ocr.py` are:
+
+| Reason | Rule |
+| --- | --- |
+| `empty-ink` | Fewer than 40 trimmed characters on a page with ink |
+| `language` | At least 1,000 characters; the app's existing detector disagrees with the book language |
+| `nonwords` | More than 50% malformed tokens among at least 50 eligible tokens |
+| `number-missing` | No whole printed number in a reading's first or last nonempty line, or an inherited text layer's margins |
+| `number-order` | A printed number conflicts with nearby numbers of the same numbering family, within two PDF pages |
+| `token-limit` | A vision reply finishes with `length` |
+
+The ink test renders the inner page (excluding 2% at each edge) at 72 DPI in
+memory; more than 0.1% of its grayscale pixels must be darker than intensity 180.
+Malformed tokens are whitespace tokens after ordinary punctuation is stripped,
+excluding tokens containing digits. A word needs two letters, at least 70%
+alphabetic characters and an English/Spanish vowel (including accented vowels
+and y). This is a shape check, not a dictionary: scientific terminology is kept.
+Without comparable neighbouring numbers a visible number is provisionally kept;
+extraction still requires the existing sequence verification before labelling
+it as a confidently read printed page.
+
+Read failing pages and inspect the queue without any model call:
+
+```sh
+docker compose --profile ingest run --rm ingest ocr-queue mathews passarge alberts
+# A bounded first run; the limit counts new page readings, including their retry.
+docker compose --profile ingest run --rm ingest ocr alberts --limit 20
+# Full runs are detached, one book at a time.
+docker compose --profile ingest run -d --rm ingest ocr <book-id>
+docker logs --tail 20 <container-id>
+```
+
+`ocr` and `ocr-queue` need the external manifest but not Postgres. The queue lists
+PDF pages, short reason codes and counts, including pages awaiting a first reading.
+It reports kept / read and passing / queued totals, word-shape quantiles, seconds
+for completed calls, rotation retries and rescues. It sends nothing elsewhere.
+A failed upright reading gets exactly one retry with its page rotated 180 degrees;
+fewer failed rules wins, with upright winning ties. Both replies remain intact.
+
+Kept readings live only at `/data/originals/ocr/<book-id>/<pdf-page>.json`, covered
+by the originals backup. Each contains the selected text, `vision` rung, endpoint's
+reported model, method version, rotation, failed rules, seconds and UTC time,
+plus every attempt. A synced temporary file beside the destination is renamed
+atomically; failure leaves the previous file intact. `METHOD_VERSION` covers the
+prompt, DPI and settings and must change when any of them changes. Older-version
+records are retained inside the replacement file. Current-version attempts are
+never repeated, even for queued pages. If interrupted after an upright reply,
+resume performs only its pending rotation. An HTTP 500 or lost connection stops
+cleanly with exit code 3: no failed call is marked as a reading. Run the same command
+again to continue. An already completed reply stays durable if its retry is offline.
+
+Extraction without current readings preserves the existing paragraphs and counts.
+With readings it uses blank-line blocks as paragraphs, drops the watermark line
+`Copyrighted material`, and stores figure markers and their captions separately.
+A vocabulary heading starts a section of its kind; otherwise a reading uses the
+bookmark path. Its first or last line supplies a printed number only when the
+sequence supports it; the existing numbering inference remains the fallback.
+Passing OCR paragraphs can join across pages. Queued pages and inherited OCR in
+a book being rebuilt from readings cannot. Every passage records `born-digital`,
+`inherited-ocr` or `ocr`; queued passages retain their reasons and are indexed
+anyway. Their screen label says **from OCR — check the page**. Passing readings
+say **from OCR**; both are transcriptions of source pages, separate from generated
+answers and translations.
+
+For the OCR rebuild, wait for the owner's confirmation that the embedding
+comparison is closed and their choice of embedding purpose and roles. Check that
+no ingest is running before pulling or building. Add Stryer to the external
+manifest as `stryer`, language `Spanish`, with `eval_book = "stryer-bioquimica-6-es"`.
+Measure a bounded sample first and report rule counts and reading timings. Then
+read `stryer`, `passarge`, `alberts`, `mathews`, one at a time, and ingest each into
+`v3` using the app's selected embedding purpose and roles:
+
+```sh
+docker compose --profile ingest run -d --rm -e INDEX_VERSION=v3 ingest ingest <book-id>
+docker compose --profile ingest run --rm -e INDEX_VERSION=v3 ingest status stryer passarge alberts mathews
+```
+
+Only after every book is fully stored, set `INDEX_VERSION=v3` in `.env` and restart
+`med-ask.service`. Changing versions never deletes, drops or renames tables.
 
 ### Embedding comparison arms
 
@@ -441,7 +536,7 @@ no answer. If checks failed, that limitation is displayed beside the result.
 Each source includes labels, language, section, OCR provenance and at most one
 neighbour on either side in the same section. Neighbours are secondary source
 context capped at 120 words each; they are not answer inputs or numbered evidence.
-**from OCR — check the page** marks inherited OCR. Review source fetches
+**from OCR — check the page** marks inherited OCR and queued page readings. Review source fetches
 `GET /api/page/<book-id>/<one-based-pdf-page>` as an approximately 1,000-pixel-wide
 PNG held only in memory, with private one-hour cache headers.
 
@@ -524,6 +619,10 @@ docker compose --profile ingest run --rm ingest eval
 # Another indexed model, by naming its purpose:
 docker compose --profile ingest run --rm ingest eval --purpose <purpose>
 ```
+
+The eval uses `INDEX_VERSION` (default `v2`) through the app's search, without
+changing its scoring or gate. Pass `-e INDEX_VERSION=v3` to evaluate the rebuilt
+tables before switching the running app.
 
 `--purpose` defaults to `EMBEDDING_PURPOSE`. `--roles` and `--no-roles` override
 `EMBEDDING_ROLES` for the run. Only records with status `confirmed`
