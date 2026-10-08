@@ -60,3 +60,15 @@ textarea:focus-visible { outline: 3px solid #7aa991; outline-offset: 3px; }
   article { padding: 1.25rem; }
   .page-controls { flex-wrap: wrap; }
 }
+
+.generated { background: #edf0fa; border: 1px solid #aab6da; border-radius: 12px; padding: 1.25rem; }
+.generated h2, .generated h4 { margin-top: 0; }
+.answer-text, .translation p { white-space: pre-wrap; line-height: 1.6; overflow-wrap: anywhere; }
+.book-group { margin-top: 2rem; }
+.passage-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; align-items: start; }
+.translation-button { margin-left: .75rem; }
+.not-found { padding: 1.25rem; background: #fff0cb; border-radius: 8px; }
+@media (max-width: 680px) {
+  .passage-pair { grid-template-columns: 1fr; }
+  .translation-button { margin: .75rem 0 0; }
+}

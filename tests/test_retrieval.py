@@ -385,3 +385,64 @@ def test_synthetic_ingest_rerun_skips_stored_passages(tmp_path, monkeypatch):
     assert first["stored"] == first["extracted"] > 0
     assert again["skipped"] == first["stored"]
     assert index.insert_nodes.call_count == first["stored"]
+
+
+@pytest.mark.parametrize("k", [10, 30])
+def test_search_candidate_count_and_similarity_order(monkeypatch, k):
+    database = MagicMock()
+    database.model.return_value = ("synthetic-v1", 3, True)
+    database.url = "postgresql://unused"
+    store = MagicMock()
+
+    async def close():
+        pass
+
+    store.close = close
+    nodes = passage_nodes([make_passage(i) for i in range(30)], "Invented title")
+    index = MagicMock()
+    matches = [
+        MagicMock(node=node, score=1 - i / 100) for i, node in enumerate(nodes[:k])
+    ]
+    index.as_retriever.return_value.retrieve.return_value = matches
+    monkeypatch.setattr(
+        "med_ask.retrieval.VectorStoreIndex.from_vector_store", lambda *a, **kw: index
+    )
+    monkeypatch.setattr("med_ask.retrieval.neighbouring_passages", lambda *a: [])
+    options = {} if k == 10 else {"k": k}
+    evidence, _, _ = search(
+        "Invented question", FakeEndpoint(), database, lambda *a: store, **options
+    )
+    index.as_retriever.assert_called_once_with(similarity_top_k=k)
+    assert [e.score for e in evidence] == [m.score for m in matches]
+    assert len(evidence) == k
+
+
+def test_real_question_fields_translation_cache_and_export(tmp_path, real_database):
+    from test_generation import candidate
+
+    from med_ask.generation import group_evidence
+
+    real_database.ensure()  # Existing tables upgrade idempotently.
+    identity = real_database.begin_question("Invented\x00 question?", "tailnet", "ca")
+    evidence = group_evidence([candidate()], [True], "ca")[0]["evidence"]
+    grades = [dict(id="one", grade=True), dict(id="failed", grade=None)]
+    real_database.finish_question(identity, "synthetic", evidence, grades, 1)
+    real_database.save_answer(identity, "different", "Wrong owner")
+    assert real_database.question(identity, "tailnet")["answer"] is None
+    real_database.save_answer(identity, "tailnet", "Invented answer. [1]")
+    assert real_database.question(identity, "different") is None
+    real_database.feedback(identity, "tailnet", "up", "Invented\x00 comment")
+    passage = uuid4().hex
+    assert real_database.translation(passage, "ca") is None
+    real_database.save_translation(passage, "ca", "Invented translation")
+    real_database.save_translation(passage, "ca", "Other translation")
+    assert real_database.translation(passage, "ca") == "Invented translation"
+    row = next(
+        json.loads(line)
+        for line in real_database.export(tmp_path).read_text().splitlines()
+        if json.loads(line)["id"] == identity
+    )
+    assert row["question"] == "Invented question?"
+    assert row["comment"] == "Invented comment"
+    assert row["language"] == "ca" and row["ungraded_count"] == 1
+    assert row["grades"] == grades and row["answer"] == "Invented answer. [1]"
