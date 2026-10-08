@@ -442,3 +442,57 @@ def test_remaining_inherited_ocr_is_marked_and_does_not_join(tmp_path):
     assert all(p.pdf_pages[0] == p.pdf_pages[1] for p in inherited)
     assert all(p.text_source == "inherited-ocr" and p.check_page for p in inherited)
     assert all(p.ocr_reasons == ["number-missing"] for p in inherited)
+
+
+@pytest.mark.parametrize("recorded_model", [False, True])
+def test_hidden_pages_are_not_read_or_queued_and_status_counts_them(
+    tmp_path, recorded_model
+):
+    from med_ask.retrieval import ingest_status
+
+    path = tmp_path / "synthetic.pdf"
+    with pymupdf.open() as doc:
+        for _ in range(2):
+            page = doc.new_page(width=120, height=160)
+            page.insert_text((10, 60), "Hidden page")
+            # Even an inked placeholder must never be sent to vision.
+            page.draw_rect(pymupdf.Rect(10, 80, 30, 100), fill=(0, 0, 0))
+        doc.save(path)
+    book = Book("synthetic", path.name, "Synthetic book", "English", path)
+    root = tmp_path / "ocr"
+    kept(root, book, 1, "Synthetic kept reading which must be ignored.")
+    kept(
+        root,
+        book,
+        2,
+        "Synthetic older reading which must not be repeated.",
+        method_version="old",
+    )
+    before = {p.name: p.read_bytes() for p in (root / book.id).iterdir()}
+    fake = endpoint()
+    assert ocr.read_book(book, fake, root, output=lambda *a, **k: None)
+    fake.read.assert_not_called()
+    assert {p.name: p.read_bytes() for p in (root / book.id).iterdir()} == before
+    unused_root = tmp_path / "unused"
+    assert ocr.read_book(book, fake, unused_root, output=lambda *a, **k: None)
+    fake.read.assert_not_called()
+    assert not unused_root.exists()
+    summary = ocr.queue_summary(book, root)
+    assert summary["hidden"] == summary["pages"] == 2
+    assert summary["kept"] == summary["queued"] == summary["read_passing"] == 0
+    assert summary["queue"] == [] and summary["reasons"] == {}
+    assert summary["rotations"] == 0 and summary["seconds_per_reading"] == []
+    extraction = extract_book(path, book.id, book.language, ocr_root=root)
+    assert not extraction.passages and not extraction.captions
+    assert all(
+        not page.has_text and page.text_source == "hidden" for page in extraction.pages
+    )
+    database = MagicMock()
+    database.models.return_value = (
+        [("synthetic-table", "synthetic-reported", 3)] if recorded_model else []
+    )
+    database.model.return_value = None
+    rows = ingest_status([book], database)
+    assert rows[0]["hidden"] == 2
+    assert rows[0]["stored"] == rows[0]["extracted"] == 0
+    assert ocr.failed_rules("Hidden page", "English", "hidden", True, {}) == []

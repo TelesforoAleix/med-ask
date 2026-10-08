@@ -419,11 +419,19 @@ def _paragraphs(block: _Block, split_titles: bool = True) -> list[_Block]:
     return [_block(lines, block.source) for lines in groups]
 
 
+def is_hidden_text(text: str) -> bool:
+    """1. Recognise the whole Hidden page placeholder after folding whitespace."""
+    return " ".join(text.split()) == "Hidden page"
+
+
 def _classify(page: pymupdf.Page, blocks: list[_Block], images: list[dict]) -> str:
-    """1. Report no text when the PDF has no text spans.
-    2. Identify a page-covering scan with mostly invisible text as inherited OCR.
-    3. Treat the remaining text layers as born-digital.
+    """1. Treat the whole Hidden page placeholder as missing source content.
+    2. Report no text when the PDF has no text spans.
+    3. Identify a page-covering scan with mostly invisible text as inherited OCR.
+    4. Treat the remaining text layers as born-digital.
     """
+    if is_hidden_text(page.get_text()):
+        return "hidden"
     if not blocks:
         return "no-text"
     area = page.rect.get_area()
@@ -1092,7 +1100,7 @@ def extract_book(
     pdf_path: str | Path, book_id: str, language: str, *, ocr_root: Path | None = None
 ) -> Extraction:
     """1. Read positioned text, margin numbers, bookmarks, and diagnostic labels.
-    2. Classify text provenance, verify numbering, and find repeated margins.
+    2. Classify provenance, exclude hidden placeholders, and verify numbering.
     3. Substitute kept readings, separating captions, headings, and failed rules.
     4. Remove margins and figure labels from PDF text; assign its sections.
     5. Reassemble PDF fragments, preserving legacy boundaries without readings.
@@ -1118,12 +1126,19 @@ def extract_book(
         for page in doc:
             blocks = _read_blocks(page)
             images = page.get_image_info()
-            raw_pages.append(blocks)
-            sources.append(_classify(page, blocks, images))
+            source = _classify(page, blocks, images)
+            raw_pages.append([] if source == "hidden" else blocks)
+            sources.append(source)
             page_images.append(images)
             text = page.get_text()
             page_texts.append(text)
-            inks.append(has_ink(page) if len(text.strip()) < 40 else True)
+            inks.append(
+                False
+                if source == "hidden"
+                else has_ink(page)
+                if len(text.strip()) < 40
+                else True
+            )
         heights = [page.rect.height for page in doc]
         widths = [page.rect.width for page in doc]
         labels = [page.get_label() for page in doc]
@@ -1131,7 +1146,10 @@ def extract_book(
     candidates = [
         _candidates(blocks, h) for blocks, h in zip(raw_pages, heights, strict=True)
     ]
-    readings = [load_reading(book_id, i + 1, root) for i in range(len(raw_pages))]
+    readings = [
+        None if source == "hidden" else load_reading(book_id, i + 1, root)
+        for i, source in enumerate(sources)
+    ]
     original_decisions = _printed_pages(candidates)
     candidates = [
         reading_candidates(r["text"]) if r else c
@@ -1183,6 +1201,10 @@ def extract_book(
         )
         for index, (value, method, reason) in enumerate(decisions)
     ]
+    decisions = [
+        (None, "none", "hidden") if sources[i] == "hidden" else decision
+        for i, decision in enumerate(decisions)
+    ]
     accounts = [
         PageAccount(i + 1, bool(blocks), *decision, label, sources[i])
         for i, (blocks, decision, label) in enumerate(
@@ -1220,6 +1242,9 @@ def extract_book(
             bookmark_path = bookmark_path[: level - 1] + [title]
             heading_path = []
             entry = next(entries, None)
+        if sources[index] == "hidden":
+            previous_last = None
+            continue
         if readings[index]:
             reading = readings[index]
             section = tuple(bookmark_path)
@@ -1575,10 +1600,11 @@ def join_page_passages(
     passages: list[Passage], accounts: list[PageAccount]
 ) -> list[Passage]:
     """1. Compare consecutive passages across pages, skipping body-free pages.
-    2. Require the same book and section, content kinds, and no unchecked OCR.
-    3. Join unfinished sentences continued in lower case or with a hyphenated word.
-    4. Extend PDF and verified printed ranges and preserve both source locations.
-    5. Renumber the retained passages in reading order.
+    2. Refuse joins across hidden pages whose source content is missing.
+    3. Require the same book and section, content kinds, and no unchecked OCR.
+    4. Join unfinished sentences continued in lower case or with a hyphenated word.
+    5. Extend PDF and verified printed ranges and preserve both source locations.
+    6. Renumber the retained passages in reading order.
     """
     joined: list[Passage] = []
     for current in passages:
@@ -1589,6 +1615,12 @@ def join_page_passages(
         if (
             previous is not None
             and previous.pdf_pages[1] < current.pdf_pages[0]
+            and all(
+                account.text_source != "hidden"
+                for account in accounts[
+                    previous.pdf_pages[1] : current.pdf_pages[0] - 1
+                ]
+            )
             and previous.book_id == current.book_id
             and previous.section_path == current.section_path
             and previous.kind == current.kind == "content"
@@ -1655,7 +1687,7 @@ def sample_pages(result: Extraction, sample: int, seed: int) -> list[int]:
 
 
 def report(result: Extraction, pages: list[int]) -> str:
-    """1. Count text pages, paragraphs, captions, numbering decisions, and crossings.
+    """1. Count text, hidden pages, paragraphs, captions, numbering, and crossings.
     2. Compare diagnostic PDF labels with confident printed numbers.
     3. List each sampled paragraph's label, section, and first six original words.
     """
@@ -1676,7 +1708,8 @@ def report(result: Extraction, pages: list[int]) -> str:
     lines = [
         f"Book: {result.book_id} ({result.language})",
         f"Pages: {len(result.pages)}; text: {with_text}; "
-        f"without text: {len(result.pages) - with_text}",
+        f"without text: {len(result.pages) - with_text}; "
+        f"hidden: {provenance['hidden']}",
         f"Passages: {len(result.passages)}; captions: {len(result.captions)}",
         f"Text provenance: born-digital {provenance['born-digital']}; "
         f"inherited-OCR pages {provenance['inherited-ocr']}; "
