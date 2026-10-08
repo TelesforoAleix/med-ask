@@ -1,4 +1,4 @@
-"""Plain-text embedding seams for the compatible endpoint."""
+"""Optional query and passage roles for the compatible embedding endpoint."""
 
 import os
 from dataclasses import dataclass
@@ -17,8 +17,13 @@ class Embedded:
 
 
 class Endpoint:
-    def __init__(self, purpose=None):
+    def __init__(self, purpose=None, roles=None):
         self.purpose = purpose or os.environ.get("EMBEDDING_PURPOSE", "embed")
+        self.roles = (
+            os.environ.get("EMBEDDING_ROLES", "false") == "true"
+            if roles is None
+            else roles
+        )
         self.client = OpenAI(
             base_url=os.environ["MODEL_BASE_URL"],
             api_key=os.environ["MODEL_API_KEY"],
@@ -26,14 +31,17 @@ class Endpoint:
             max_retries=0,
         )
 
-    def request(self, texts: list[str]) -> Embedded:
-        """1. Send unchanged text using the configured embedding purpose.
+    def request(self, texts: list[str], input_type=None) -> Embedded:
+        """1. Send unchanged text, adding the input role only when enabled.
         2. Keep the reported model, ordered vectors, and elapsed time.
         3. Reject incomplete or inconsistent responses.
         """
         started = perf_counter()
         response = self.client.embeddings.create(
-            model=self.purpose, input=texts, encoding_format="float"
+            model=self.purpose,
+            input=texts,
+            encoding_format="float",
+            **({"extra_body": {"input_type": input_type}} if self.roles else {}),
         )
         vectors = [
             item.embedding for item in sorted(response.data, key=lambda x: x.index)
@@ -50,12 +58,16 @@ class Endpoint:
 
 
 def embed_query(endpoint, question: str) -> Embedded:
-    """1. Embed the question as plain text at the query-role seam."""
+    """1. Embed unchanged question text with the query role when enabled."""
+    if getattr(endpoint, "roles", False) is True:
+        return endpoint.request([question], input_type="query")
     return endpoint.request([question])
 
 
 def embed_passages(endpoint, texts: list[str]) -> Embedded:
-    """1. Embed passages as plain text at the passage-role seam."""
+    """1. Embed unchanged passage text with the passage role when enabled."""
+    if getattr(endpoint, "roles", False) is True:
+        return endpoint.request(texts, input_type="passage")
     return endpoint.request(texts)
 
 
@@ -89,5 +101,5 @@ class PurposeEmbedding(BaseEmbedding):
         return self._check(embed_query(self._endpoint, query))
 
     async def _aget_query_embedding(self, query: str) -> list[float]:
-        """1. Use the same plain-text query seam for asynchronous callers."""
+        """1. Use the same configured query seam for asynchronous callers."""
         return self._get_query_embedding(query)

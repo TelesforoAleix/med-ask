@@ -499,3 +499,24 @@ def test_old_ungraded_log_row_cannot_generate_answer(graded_app):
         == 409
     )
     generation.complete.assert_not_called()
+
+
+def test_search_keeps_legacy_plain_endpoint_compatible(app):
+    from med_ask.embedding import Embedded
+    from med_ask.retrieval import model_table
+
+    class PlainEndpoint:
+        def request(self, texts):
+            return Embedded("synthetic-v1", [[1.0, 2.0]], 0.001)
+
+    database = QuestionMemory()
+    app.config.update(QUESTION_DATABASE=database, EMBEDDING_ENDPOINT=PlainEndpoint())
+    response = app.test_client().post(
+        "/api/search",
+        json={"question": "Synthetic question?"},
+        headers={"Cf-Access-Authenticated-User-Email": "synthetic@example.invalid"},
+    )
+    assert response.status_code == 409
+    assert database.rows[response.json["question_id"]]["table"] == model_table(
+        "synthetic-v1"
+    )

@@ -54,13 +54,17 @@ class Evidence:
     kind: str = "content"
 
 
-def model_table(model: str) -> str:
+def model_table(model: str, roles=False, purpose="embed") -> str:
     """1. Sanitize the reported model for a short PostgreSQL identifier.
-    2. Add the index version and model hash to keep rebuilds in separate tables.
+    2. Mark role indexes separately, except embed-large's unchanged passages.
+    3. Add the index version and model hash to keep rebuilds in separate tables.
     """
     stem = re.sub(r"[^a-z0-9]+", "_", model.lower()).strip("_")[:32] or "model"
     digest = hashlib.sha256(model.encode()).hexdigest()[:16]
-    return f"e_{INDEX_VERSION}_{stem}_{digest}"
+    version = INDEX_VERSION + (
+        "r" if roles is True and purpose != "embed-large" else ""
+    )
+    return f"e_{version}_{stem}_{digest}"
 
 
 def passage_id(passage: Passage) -> str:
@@ -206,7 +210,7 @@ def neighbouring_passages(node, store) -> list[dict]:
 
 def ingest_book(book, endpoint, database, store_factory=vector_store, output=print):
     """1. Extract the requested book and probe the endpoint's model and dimensions.
-    2. Record that model and the number of extracted passages outside git.
+    2. Select its role-aware table and record the extracted count outside git.
     3. Ask LlamaIndex which stable passage ids are already stored.
     4. Insert only missing passages through LlamaIndex, committing each passage.
     5. Print durable progress and the final stored/extracted summary.
@@ -214,7 +218,11 @@ def ingest_book(book, endpoint, database, store_factory=vector_store, output=pri
     extraction = extract_book(book.path, book.id, book.language)
     probe = embed_query(endpoint, "index dimension probe")
     dimensions = len(probe.vectors[0])
-    table = model_table(probe.model)
+    table = model_table(
+        probe.model,
+        getattr(endpoint, "roles", False),
+        getattr(endpoint, "purpose", "embed"),
+    )
     database.register(table, probe.model, dimensions)
     database.book_count(table, book.id, len(extraction.passages))
     with managed_store(
@@ -259,13 +267,17 @@ def ingest_book(book, endpoint, database, store_factory=vector_store, output=pri
 
 
 def search(question, endpoint, database, store_factory=vector_store, k=10):
-    """1. Embed the question once and select the reported model's vector table.
+    """1. Embed the question once and select the model's role-aware vector table.
     2. Refuse absent tables or a mismatched recorded model or dimension.
     3. Filter to content, summary, and glossary inside LlamaIndex's vector search.
     4. Convert passages and same-section neighbours into plain evidence records.
     """
     embedded = embed_query(endpoint, question)
-    table = model_table(embedded.model)
+    table = model_table(
+        embedded.model,
+        getattr(endpoint, "roles", False),
+        getattr(endpoint, "purpose", "embed"),
+    )
     recorded = database.model(table)
     if not recorded or not recorded[2]:
         raise NoIndex(

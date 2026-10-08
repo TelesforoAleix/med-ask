@@ -10,6 +10,7 @@ services:
       MODEL_BASE_URL: "${MODEL_BASE_URL:-http://litellm:4000/v1}"
       MODEL_API_KEY: "${MODEL_API_KEY:-unused}"
       EMBEDDING_PURPOSE: "${EMBEDDING_PURPOSE:-embed}"
+      EMBEDDING_ROLES: "${EMBEDDING_ROLES:-false}"
       DATABASE_URL: "postgresql://medask:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/medask"
     volumes:
       - ${SOURCES_PATH:-sources-empty}:/data/sources:ro
@@ -32,6 +33,7 @@ services:
       MODEL_BASE_URL: "${MODEL_BASE_URL:-http://litellm:4000/v1}"
       MODEL_API_KEY: "${MODEL_API_KEY:-unused}"
       EMBEDDING_PURPOSE: "${EMBEDDING_PURPOSE:-embed}"
+      EMBEDDING_ROLES: "${EMBEDDING_ROLES:-false}"
       DATABASE_URL: "postgresql://medask:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/medask"
     volumes:
       - ${SOURCES_PATH:-sources-empty}:/data/sources:ro
@@ -49,6 +51,7 @@ services:
       MODEL_BASE_URL: "${MODEL_BASE_URL:-http://litellm:4000/v1}"
       MODEL_API_KEY: "${MODEL_API_KEY:-unused}"
       EMBEDDING_PURPOSE: "${EMBEDDING_PURPOSE:-embed}"
+      EMBEDDING_ROLES: "${EMBEDDING_ROLES:-false}"
       DATABASE_URL: "postgresql://medask:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/medask"
     volumes:
       - ${SOURCES_PATH:-sources-empty}:/data/sources:ro

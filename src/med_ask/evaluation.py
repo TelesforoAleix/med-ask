@@ -284,14 +284,24 @@ def summarise(questions: list[dict]) -> dict:
     }
 
 
-def run_eval(eval_path, runs_dir, books, retrieve, purpose, statuses, output=print):
+def run_eval(
+    eval_path,
+    runs_dir,
+    books,
+    retrieve,
+    purpose,
+    statuses,
+    output=print,
+    *,
+    roles=False,
+):
     """1. Load the eval file, setting malformed records aside by id.
     2. Map manifest books to eval books; unmapped eval books count as not indexed.
     3. Warm the endpoint once with fixed text so a cold start is not timed.
     4. Retrieve each non-retired record with the app's search, keeping ids,
        ranks, scores and timings only.
     5. Score selected answerable records; report the rest as skipped with a reason.
-    6. Write the result file under the runs directory and print a short summary.
+    6. Write a result named by purpose and roles and print a short summary.
     """
     records, malformed = load_eval(Path(eval_path))
     statuses = frozenset(statuses)
@@ -359,6 +369,7 @@ def run_eval(eval_path, runs_dir, books, retrieve, purpose, statuses, output=pri
         "eval_file": Path(eval_path).name,
         "set_version": max(r.set_version for r in records),
         "purpose": purpose,
+        "roles": roles,
         "table": table,
         "statuses": sorted(statuses),
         "eval_books": dict(sorted(eval_books.items())),
@@ -380,7 +391,10 @@ def run_eval(eval_path, runs_dir, books, retrieve, purpose, statuses, output=pri
     runs_dir = Path(runs_dir)
     runs_dir.mkdir(exist_ok=True)
     stem = re.sub(r"[^a-z0-9_-]+", "-", purpose.lower()).strip("-") or "purpose"
-    path = runs_dir / (f"run-{created:%Y%m%dT%H%M%SZ}-{stem}-{uuid4().hex[:6]}.json")
+    role_mark = "roles-on" if roles else "roles-off"
+    path = runs_dir / (
+        f"run-{created:%Y%m%dT%H%M%SZ}-{stem}-{role_mark}-{uuid4().hex[:6]}.json"
+    )
     with path.open("x", encoding="utf-8") as file:
         json.dump(run, file, indent=2)
         file.write("\n")
@@ -403,6 +417,7 @@ def summary_lines(run: dict) -> list[str]:
     c, s = run["counts"], run["summary"]
     lines = [
         f"eval: set_version={run['set_version']} purpose={run['purpose']} "
+        f"roles={'on' if run.get('roles', False) else 'off'} "
         f"table={run['table']} statuses={','.join(run['statuses'])}",
         f"records: read={c['read']} malformed={c['malformed']} "
         f"retired={c['retired']} retrieved={c['retrieved']} "
@@ -496,8 +511,10 @@ def comparison_lines(result: dict, baseline: dict, candidate: dict) -> list[str]
     lines = [
         f"gate: {'PASS' if result['passed'] else 'FAIL'}",
         f"baseline: purpose={baseline['purpose']} table={baseline['table']} "
+        f"roles={'on' if baseline.get('roles', False) else 'off'} "
         f"Hit@5 {_rate(b['hit5'], b['scored'])}",
         f"candidate: purpose={candidate['purpose']} table={candidate['table']} "
+        f"roles={'on' if candidate.get('roles', False) else 'off'} "
         f"Hit@5 {_rate(c['hit5'], c['scored'])}",
         "lost: " + (" ".join(result["lost"]) or "none"),
         "gained: " + (" ".join(result["gained"]) or "none"),

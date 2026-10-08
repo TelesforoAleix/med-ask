@@ -10,6 +10,7 @@ from med_ask.embedding import Endpoint
 from med_ask.evaluation import (
     EvalError,
     compare_runs,
+    comparison_lines,
     load_eval,
     load_run,
     parse_record,
@@ -255,7 +256,11 @@ def synthetic_set(tmp_path):
     return path, answers
 
 
-def test_run_scores_skips_and_breaks_down(tmp_path):
+@pytest.mark.parametrize(
+    "purpose,roles",
+    [("embed", False), ("embed", True), ("embed-large", False), ("embed-large", True)],
+)
+def test_run_scores_skips_and_breaks_down(tmp_path, purpose, roles):
     path, answers = synthetic_set(tmp_path)
     calls, printed = [], []
     result = run_eval(
@@ -263,13 +268,17 @@ def test_run_scores_skips_and_breaks_down(tmp_path):
         tmp_path / "runs",
         BOOKS,
         fake_retrieve(answers, calls),
-        "embed",
+        purpose,
         ["confirmed"],
         output=lambda line, **_: printed.append(line),
+        roles=roles,
     )
     assert calls[0] == "med-ask eval warm-up" and len(calls) == 7
     run = json.loads(result.read_text())
     assert result.parent == tmp_path / "runs"
+    assert run["purpose"] == purpose and run["roles"] is roles
+    role_mark = "roles-on" if roles else "roles-off"
+    assert f"-{purpose}-{role_mark}-" in result.name
     assert run["set_version"] == 1 and run["table"] == "e_synthetic_table"
     assert run["counts"] == {
         "read": 7,
@@ -529,3 +538,45 @@ def test_endpoint_purpose_can_be_named(monkeypatch):
     monkeypatch.setenv("EMBEDDING_PURPOSE", "embed")
     assert Endpoint().purpose == "embed"
     assert Endpoint("candidate").purpose == "candidate"
+
+
+@pytest.mark.parametrize(
+    "setting,flag,expected",
+    [
+        ("true", [], True),
+        ("false", [], False),
+        ("true", ["--no-roles"], False),
+        ("false", ["--roles"], True),
+    ],
+)
+def test_cli_roles_recorded(
+    cli, monkeypatch, capsys, tmp_path, setting, flag, expected
+):
+    monkeypatch.setenv("EMBEDDING_ROLES", setting)
+    code, out, err = run_cli(monkeypatch, capsys, "eval", *flag)
+    assert code == 0
+    run = load_run(next((tmp_path / "runs").iterdir()))
+    assert run["roles"] is expected
+    assert f"roles={'on' if expected else 'off'}" in out
+
+
+def test_comparison_names_roles_and_reads_older_plain_runs(tmp_path):
+    baseline = run_file(tmp_path, "embed", ["q1"])
+    candidate = {**baseline, "roles": True}
+    lines = comparison_lines(compare_runs(baseline, candidate), baseline, candidate)
+    assert "purpose=embed" in lines[1] and "roles=off" in lines[1]
+    assert "purpose=embed" in lines[2] and "roles=on" in lines[2]
+
+
+@pytest.mark.parametrize(
+    "setting,expected",
+    [(None, False), ("false", False), ("true", True), ("TRUE", False), ("1", False)],
+)
+def test_endpoint_roles_environment(monkeypatch, setting, expected):
+    monkeypatch.setenv("MODEL_BASE_URL", "http://synthetic.invalid/v1")
+    monkeypatch.setenv("MODEL_API_KEY", "unused")
+    monkeypatch.delenv("EMBEDDING_ROLES", raising=False)
+    if setting is not None:
+        monkeypatch.setenv("EMBEDDING_ROLES", setting)
+    assert Endpoint().roles is expected
+    assert Endpoint(roles=not expected).roles is not expected
