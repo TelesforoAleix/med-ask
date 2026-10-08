@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import './style.css'
+import { sourceLabel } from './source-label.js'
 
 async function post(path, body) {
   const response = await fetch(path, {
@@ -146,7 +147,7 @@ function App() {
           <h3>{group.title}</h3>
           {group.evidence.map(item => <article key={item.id} id={`passage-${item.number}`}>
           <h4>Passage [{item.number}]</h4>
-          <p className="source-label">{item.label}</p>
+          <p className="source-label">{sourceLabel(item)}</p>
           {item.inherited_ocr && <p className="ocr">from OCR — check the page</p>}
           {item.section_path.length > 0 && <p className="note">{item.section_path.join(' › ')}</p>}
           <p className="passage-heading">Original passage (in {item.language}):</p>

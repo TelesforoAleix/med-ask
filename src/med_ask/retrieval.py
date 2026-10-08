@@ -9,7 +9,11 @@ from dataclasses import asdict, dataclass, field
 
 from llama_index.core import QueryBundle, VectorStoreIndex
 from llama_index.core.schema import MetadataMode, TextNode
-from llama_index.core.vector_stores import MetadataFilter, MetadataFilters
+from llama_index.core.vector_stores import (
+    FilterOperator,
+    MetadataFilter,
+    MetadataFilters,
+)
 from llama_index.vector_stores.postgres import PGVectorStore
 from sqlalchemy.engine import make_url
 
@@ -17,6 +21,8 @@ from med_ask.embedding import PurposeEmbedding, embed_query
 from med_ask.extract import Passage, extract_book, passage_label
 
 NEIGHBOUR_WORDS = 120
+INDEX_VERSION = "v2"
+SEARCH_KINDS = ("content", "summary", "glossary")
 
 
 class NoIndex(ValueError):
@@ -45,15 +51,16 @@ class Evidence:
     label: str
     score: float | None
     neighbours: list[dict] = field(default_factory=list)
+    kind: str = "content"
 
 
 def model_table(model: str) -> str:
     """1. Sanitize the reported model for a short PostgreSQL identifier.
-    2. Add its hash to prevent collisions between sanitized names.
+    2. Add the index version and model hash to keep rebuilds in separate tables.
     """
     stem = re.sub(r"[^a-z0-9]+", "_", model.lower()).strip("_")[:32] or "model"
     digest = hashlib.sha256(model.encode()).hexdigest()[:16]
-    return f"e_{stem}_{digest}"
+    return f"e_{INDEX_VERSION}_{stem}_{digest}"
 
 
 def passage_id(passage: Passage) -> str:
@@ -167,6 +174,7 @@ def evidence_from_node(node, score=None, neighbours=None) -> Evidence:
         label=m["label"],
         score=score,
         neighbours=neighbours or [],
+        kind=m.get("kind", "content"),
     )
 
 
@@ -253,7 +261,7 @@ def ingest_book(book, endpoint, database, store_factory=vector_store, output=pri
 def search(question, endpoint, database, store_factory=vector_store, k=10):
     """1. Embed the question once and select the reported model's vector table.
     2. Refuse absent tables or a mismatched recorded model or dimension.
-    3. Retrieve the requested nearest passages with LlamaIndex's exact search.
+    3. Filter to content, summary, and glossary inside LlamaIndex's vector search.
     4. Convert passages and same-section neighbours into plain evidence records.
     """
     embedded = embed_query(endpoint, question)
@@ -272,9 +280,16 @@ def search(question, endpoint, database, store_factory=vector_store, k=10):
         index = VectorStoreIndex.from_vector_store(
             store, embed_model=PurposeEmbedding(endpoint, embedded.model, dimensions)
         )
-        matches = index.as_retriever(similarity_top_k=k).retrieve(
-            QueryBundle(query_str=question, embedding=embedded.vectors[0])
-        )
+        matches = index.as_retriever(
+            similarity_top_k=k,
+            filters=MetadataFilters(
+                filters=[
+                    MetadataFilter(
+                        key="kind", value=list(SEARCH_KINDS), operator=FilterOperator.IN
+                    )
+                ]
+            ),
+        ).retrieve(QueryBundle(query_str=question, embedding=embedded.vectors[0]))
         evidence = [
             evidence_from_node(m.node, m.score, neighbouring_passages(m.node, store))
             for m in matches

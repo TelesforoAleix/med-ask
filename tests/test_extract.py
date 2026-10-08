@@ -198,7 +198,7 @@ def test_heading_and_bookmark_paths(pdf):
     )
 
 
-def test_empty_page_breaks_continuation(pdf):
+def test_empty_page_allows_content_continuation(pdf):
     result = extract(
         pdf(
             [
@@ -209,8 +209,8 @@ def test_empty_page_breaks_continuation(pdf):
         )
     )
     assert not result.pages[1].has_text
-    assert len(result.passages) == 2
-    assert [p.pdf_pages for p in result.passages] == [(1, 1), (3, 3)]
+    assert len(result.passages) == 1
+    assert result.passages[0].pdf_pages == (1, 3)
 
 
 def test_new_section_and_indentation_prevent_join(pdf):
@@ -1029,3 +1029,159 @@ def test_ocr_glossary_terms_with_digits_keep_their_definitions(tmp_path):
     assert result.passages[0].text.startswith("Synthetic1")
     assert result.passages[1].text.startswith("Synthetic2")
     assert all(p.text.endswith("synthetic explanation") for p in result.passages)
+
+
+@pytest.mark.parametrize(
+    "section,kind",
+    [
+        (("Chapter", "P R O B L E M A S \r\n"), "exercise"),
+        (("Chapter", "REFERENCES\r", "Further reading"), "references"),
+        (("B I B L I O G R A F Í A",), "references"),
+        (("R E S U M E N",), "summary"),
+        (("Glossary\r",), "glossary"),
+        (("References", "Summary", "Nested"), "summary"),
+        (("Unknown heading",), "content"),
+        ((), "content"),
+    ],
+)
+def test_passage_kind(section, kind):
+    from med_ask.extract import Passage, passage_kind
+
+    passage = Passage("synthetic", "en", (1, 1), None, "unknown", section, 1, "Text.")
+    assert passage_kind(section) == passage.kind == kind
+
+
+def test_join_hyphen_across_figure_only_page(pdf):
+    result = extract(
+        pdf(
+            [
+                [
+                    header(10),
+                    body("A synthetic sentence ends with a hyphenated cé-", 730),
+                ],
+                [header(11), body("Figure 1 A synthetic full-page figure caption.")],
+                [header(12), body("lulas and the sentence finishes here.")],
+            ],
+            toc=[[1, "Same section", 1]],
+        )
+    )
+    assert len(result.passages) == 1
+    passage = result.passages[0]
+    assert "células" in passage.text
+    assert passage.pdf_pages == (1, 3)
+    assert passage.printed_pages == ("10", "12")
+    assert len(passage.metadata["locations"]) == 2
+    assert len(result.captions) == 1
+
+
+@pytest.mark.parametrize(
+    "boundary",
+    [
+        "section",
+        "kind",
+        "noncontent",
+        "ocr_first",
+        "ocr_next",
+        "book",
+        "same_page",
+        "closed",
+        "uppercase",
+        "intervening",
+    ],
+)
+def test_page_join_boundaries(boundary):
+    from med_ask.extract import PageAccount, Passage, join_page_passages
+
+    first = Passage(
+        "synthetic",
+        "en",
+        (1, 1),
+        ("10", "10"),
+        None,
+        ("One",),
+        1,
+        "An unfinished synthetic sentence",
+    )
+    second = Passage(
+        "synthetic",
+        "en",
+        (3, 3),
+        ("12", "12"),
+        None,
+        ("One",),
+        2,
+        "continues on another page.",
+    )
+    passages = [first, second]
+    if boundary == "section":
+        second.section_path = ("Two",)
+    elif boundary == "kind":
+        second.kind = "summary"
+    elif boundary == "noncontent":
+        first.kind = second.kind = "summary"
+    elif boundary == "ocr_first":
+        first.inherited_ocr = True
+    elif boundary == "ocr_next":
+        second.inherited_ocr = True
+    elif boundary == "book":
+        second.book_id = "another"
+    elif boundary == "same_page":
+        second.pdf_pages = (1, 1)
+    elif boundary == "closed":
+        first.text += '."'
+    elif boundary == "uppercase":
+        second.text = "Another complete sentence."
+    elif boundary == "intervening":
+        passages.insert(
+            1,
+            Passage(
+                "synthetic",
+                "en",
+                (2, 2),
+                None,
+                "unknown",
+                ("Other",),
+                2,
+                "Intervening body text.",
+            ),
+        )
+    accounts = [
+        PageAccount(n, True, str(n + 9), "read", None, "", "born-digital")
+        for n in range(1, 4)
+    ]
+    assert len(join_page_passages(passages, accounts)) == len(passages)
+
+
+def test_page_join_hyphen_allows_uppercase_and_preserves_unknown_printed_range():
+    from med_ask.extract import PageAccount, Passage, join_page_passages
+
+    passages = [
+        Passage(
+            "synthetic",
+            "en",
+            (1, 1),
+            ("10", "10"),
+            None,
+            (),
+            1,
+            "Synthetic word ends in pre-",
+        ),
+        Passage(
+            "synthetic",
+            "en",
+            (2, 2),
+            None,
+            "no-header-number",
+            (),
+            2,
+            "Existing text continues.",
+        ),
+    ]
+    accounts = [
+        PageAccount(1, True, "10", "read", None, "", "born-digital"),
+        PageAccount(2, True, None, "none", "no-header-number", "", "born-digital"),
+    ]
+    joined = join_page_passages(passages, accounts)
+    assert len(joined) == 1 and "preExisting" in joined[0].text
+    assert joined[0].printed_pages is None
+    assert joined[0].printed_page_reason == "no-header-number"

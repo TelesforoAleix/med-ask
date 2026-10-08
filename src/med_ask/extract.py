@@ -27,6 +27,37 @@ LIST_START = re.compile(
 )
 END_SENTENCE = re.compile(r"[.!?…][\s\"'’”\)\]]*$")
 TEXT_FLAGS = pymupdf.TEXTFLAGS_DICT & ~pymupdf.TEXT_PRESERVE_IMAGES
+KIND_HEADINGS = {
+    "summary": {"summary", "resumen"},
+    "glossary": {"glossary", "glosario"},
+    "exercise": {
+        "problems",
+        "problemas",
+        "respuestas a problemas",
+        "respuestas a los problemas",
+    },
+    "references": {
+        "reference",
+        "references",
+        "bibliografía",
+        "general references",
+        "referencias generales",
+        "selected introductory reading",
+    },
+}
+
+
+def passage_kind(section_path: tuple[str, ...]) -> str:
+    """1. Read headings from the nearest one upward, ignoring case and whitespace.
+    2. Match the fixed book vocabulary, including headings with spaced letters.
+    3. Return content when none of the headings is recognised.
+    """
+    for heading in reversed(section_path):
+        normalized = "".join(heading.casefold().split())
+        for kind, titles in KIND_HEADINGS.items():
+            if normalized in {"".join(title.split()) for title in titles}:
+                return kind
+    return "content"
 
 
 @dataclass
@@ -41,6 +72,11 @@ class Passage:
     text: str
     inherited_ocr: bool = False
     metadata: dict[str, Any] = field(default_factory=dict)
+    kind: str = field(init=False)
+
+    def __post_init__(self):
+        """1. Assign the passage kind from its nearest recognised section heading."""
+        self.kind = passage_kind(self.section_path)
 
 
 @dataclass
@@ -1051,7 +1087,8 @@ def extract_book(pdf_path: str | Path, book_id: str, language: str) -> Extractio
     2. Classify text provenance, verify numbering, and find repeated margins.
     3. Remove margins and figure labels; assign sections and separate captions.
     4. Reassemble OCR fragments and join paragraphs across columns and pages.
-    5. Return plain records in memory, including an account of every PDF page.
+    5. Assign kinds and join unfinished content sentences across body-free pages.
+    6. Return plain records in memory, including an account of every PDF page.
     """
     passages: list[Passage] = []
     captions: list[Caption] = []
@@ -1347,7 +1384,56 @@ def extract_book(pdf_path: str | Path, book_id: str, language: str) -> Extractio
             last_block = block
             previous_section = section
         previous_last = last_block
+    passages = join_page_passages(passages, accounts)
     return Extraction(book_id, language, passages, captions, accounts)
+
+
+def join_page_passages(
+    passages: list[Passage], accounts: list[PageAccount]
+) -> list[Passage]:
+    """1. Compare consecutive passages across pages, skipping body-free pages.
+    2. Require the same book and section, content kinds, and no inherited OCR.
+    3. Join unfinished sentences continued in lower case or with a hyphenated word.
+    4. Extend PDF and verified printed ranges and preserve both source locations.
+    5. Renumber the retained passages in reading order.
+    """
+    joined: list[Passage] = []
+    for current in passages:
+        previous = joined[-1] if joined else None
+        hyphenated = (
+            bool(re.search(r"[^\W\d_][-\u00ad]$", previous.text)) if previous else False
+        )
+        if (
+            previous is not None
+            and previous.pdf_pages[1] < current.pdf_pages[0]
+            and previous.book_id == current.book_id
+            and previous.section_path == current.section_path
+            and previous.kind == current.kind == "content"
+            and not previous.inherited_ocr
+            and not current.inherited_ocr
+            and not END_SENTENCE.search(previous.text)
+            and (current.text[:1].islower() or hyphenated)
+        ):
+            previous.text = (
+                previous.text[:-1] + current.text
+                if hyphenated
+                else _join_lines([previous.text, current.text])
+            )
+            previous.pdf_pages = (previous.pdf_pages[0], current.pdf_pages[1])
+            previous.printed_pages, previous.printed_page_reason = _positions(
+                *previous.pdf_pages, accounts
+            )
+            previous.metadata.setdefault("locations", []).extend(
+                current.metadata.get("locations", [])
+            )
+            previous.metadata.setdefault("page_text_sources", {}).update(
+                current.metadata.get("page_text_sources", {})
+            )
+        else:
+            joined.append(current)
+    for order, passage in enumerate(joined, 1):
+        passage.order = order
+    return joined
 
 
 def passage_label(passage: Passage) -> str:
