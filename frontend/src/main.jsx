@@ -152,7 +152,7 @@ function App() {
           <p className="passage-heading">Original passage (in {item.language}):</p>
           {item.neighbours.filter(n => n.position === 'before').map(n =>
             <blockquote className="neighbour" key={n.id}>
-              <small>Preceding passage · {n.label}</small>
+              <small>Preceding passage · {sourceLabel(n)}</small>
               <p>{n.text}{n.truncated ? '…' : ''}</p>
             </blockquote>)}
           <div className={translations[item.id]?.open ? 'passage-pair' : ''}>
@@ -167,7 +167,7 @@ function App() {
           </div>
           {item.neighbours.filter(n => n.position === 'after').map(n =>
             <blockquote className="neighbour" key={n.id}>
-              <small>Following passage · {n.label}</small>
+              <small>Following passage · {sourceLabel(n)}</small>
               <p>{n.text}{n.truncated ? '…' : ''}</p>
             </blockquote>)}
           <button type="button" className="secondary" onClick={event => review(item, event)}>Review source</button>
@@ -194,7 +194,7 @@ function App() {
             <button ref={closeButton} type="button" onClick={closePage}>Close</button>
           </div>
           <p className="asked">{searchedQuestion}</p>
-          <p>{page.label}</p>
+          <p>{sourceLabel(page)}</p>
           {page.pdf_pages[1] > page.pdf_pages[0] && <div className="page-controls">
             <button disabled={page.number === page.pdf_pages[0]} onClick={() => { setImageError(false); setPage({ ...page, number: page.number - 1 }) }}>Previous page</button>
             <span>PDF page {page.number}</span>
