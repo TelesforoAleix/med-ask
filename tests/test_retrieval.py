@@ -11,7 +11,13 @@ import pytest
 from openai import OpenAI
 
 from med_ask.database import Database
-from med_ask.embedding import Embedded, Endpoint, PurposeEmbedding, embed_query
+from med_ask.embedding import (
+    Embedded,
+    Endpoint,
+    PurposeEmbedding,
+    embed_passages,
+    embed_query,
+)
 from med_ask.extract import Passage
 from med_ask.manifest import Book, load_manifest
 from med_ask.retrieval import (
@@ -29,13 +35,14 @@ from med_ask.retrieval import (
 
 class FakeEndpoint:
     purpose = "embed"
+    roles = False
 
     def __init__(self, dimensions=3, model="synthetic-v1"):
         self.dimensions = dimensions
         self.model = model
         self.calls = []
 
-    def request(self, texts):
+    def request(self, texts, input_type=None):
         self.calls.extend(texts)
         return Embedded(self.model, [[1.0] * self.dimensions for _ in texts], 0.001)
 
@@ -216,18 +223,25 @@ def test_changed_endpoint_model_refuses_passage():
         adapter.get_text_embedding("Synthetic passage.")
 
 
-def test_compatible_client_preserves_reported_identity(monkeypatch):
+@pytest.mark.parametrize("roles", [False, True])
+@pytest.mark.parametrize(
+    "seam,role", [(embed_query, "query"), (embed_passages, "passage")]
+)
+def test_compatible_client_preserves_reported_identity(monkeypatch, roles, seam, role):
     monkeypatch.setenv("MODEL_BASE_URL", "http://synthetic.invalid/v1")
     monkeypatch.setenv("MODEL_API_KEY", "unused")
     monkeypatch.setenv("EMBEDDING_PURPOSE", "embed")
 
     def respond(request):
         assert request.url.path == "/v1/embeddings"
-        assert json.loads(request.content) == {
+        expected = {
             "input": ["Synthetic question?"],
             "model": "embed",
             "encoding_format": "float",
         }
+        if roles:
+            expected["input_type"] = role
+        assert json.loads(request.content) == expected
         return httpx.Response(
             200,
             json={
@@ -240,13 +254,14 @@ def test_compatible_client_preserves_reported_identity(monkeypatch):
             },
         )
 
-    endpoint = Endpoint()
+    endpoint = Endpoint(roles=roles)
     endpoint.client = OpenAI(
         base_url="http://synthetic.invalid/v1",
         api_key="unused",
         http_client=httpx.Client(transport=httpx.MockTransport(respond)),
     )
-    result = embed_query(endpoint, "Synthetic question?")
+    text = "Synthetic question?" if seam is embed_query else ["Synthetic question?"]
+    result = seam(endpoint, text)
     assert result.model == "synthetic-reported"
     assert result.vectors == [[1.0, 2.0, 3.0]]
 
@@ -288,9 +303,16 @@ def real_database():
     return database
 
 
-def test_real_pgvector_resume_search_status_and_export(tmp_path, real_database):
+@pytest.mark.parametrize(
+    "roles,purpose",
+    [(False, "embed"), (True, "embed"), (False, "embed-large"), (True, "embed-large")],
+)
+def test_real_pgvector_resume_search_status_and_export(
+    tmp_path, real_database, roles, purpose
+):
     # Deliberately exceed the ANN vector limit, without using an ANN index.
     endpoint = FakeEndpoint(dimensions=2000 + 3, model="synthetic-" + uuid4().hex)
+    endpoint.roles, endpoint.purpose = roles, purpose
     book = make_book(tmp_path)
 
     def output(*args, **kwargs):
@@ -355,11 +377,18 @@ def test_ingest_resume_after_interruption(tmp_path, real_database):
     assert result["stored"] == result["extracted"]
 
 
-def test_synthetic_ingest_rerun_skips_stored_passages(tmp_path, monkeypatch):
+@pytest.mark.parametrize(
+    "roles,purpose",
+    [(False, "embed"), (True, "embed"), (False, "embed-large"), (True, "embed-large")],
+)
+def test_synthetic_ingest_rerun_skips_stored_passages(
+    tmp_path, monkeypatch, roles, purpose
+):
     book = make_book(tmp_path)
     endpoint = FakeEndpoint()
     database = MagicMock()
     database.url = "postgresql://unused"
+    endpoint.roles, endpoint.purpose = roles, purpose
     stored = {}
     store = MagicMock()
 
@@ -383,13 +412,19 @@ def test_synthetic_ingest_rerun_skips_stored_passages(tmp_path, monkeypatch):
     again = ingest_book(
         book, endpoint, database, lambda *a, **k: store, output=lambda *a, **k: None
     )
+    assert first["table"] == model_table(endpoint.model, roles, purpose)
+    database.register.assert_called_with(first["table"], endpoint.model, 3)
     assert first["stored"] == first["extracted"] > 0
     assert again["skipped"] == first["stored"]
     assert index.insert_nodes.call_count == first["stored"]
 
 
 @pytest.mark.parametrize("k", [10, 30])
-def test_search_candidate_count_and_similarity_order(monkeypatch, k):
+@pytest.mark.parametrize(
+    "roles,purpose",
+    [(False, "embed"), (True, "embed"), (False, "embed-large"), (True, "embed-large")],
+)
+def test_search_candidate_count_and_similarity_order(monkeypatch, k, roles, purpose):
     database = MagicMock()
     database.model.return_value = ("synthetic-v1", 3, True)
     database.url = "postgresql://unused"
@@ -410,9 +445,13 @@ def test_search_candidate_count_and_similarity_order(monkeypatch, k):
     )
     monkeypatch.setattr("med_ask.retrieval.neighbouring_passages", lambda *a: [])
     options = {} if k == 10 else {"k": k}
-    evidence, _, _ = search(
-        "Invented question", FakeEndpoint(), database, lambda *a: store, **options
+    endpoint = FakeEndpoint()
+    endpoint.roles, endpoint.purpose = roles, purpose
+    evidence, table, _ = search(
+        "Invented question", endpoint, database, lambda *a: store, **options
     )
+    assert table == model_table(endpoint.model, roles, purpose)
+    database.model.assert_called_once_with(table)
     from llama_index.core.vector_stores import FilterOperator
 
     kwargs = index.as_retriever.call_args.kwargs
@@ -512,3 +551,13 @@ def test_real_pgvector_filters_kinds_before_top_k(real_database):
     assert selected_table == table
     assert len(evidence) == 3
     assert {e.kind for e in evidence} == {"content", "summary", "glossary"}
+
+
+def test_role_table_rule_preserves_plain_name():
+    model = "synthetic-v1"
+    plain = "e_v2_synthetic_v1_" + hashlib.sha256(model.encode()).hexdigest()[:16]
+    assert model_table(model) == plain
+    assert model_table(model, True, "embed") == plain.replace("e_v2_", "e_v2r_", 1)
+    assert model_table(model, True, "embed-large") == plain
+    assert model_table(model, False, "embed-large") == plain
+    assert len("data_" + model_table("x" * 300, True)) <= 63

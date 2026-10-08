@@ -326,10 +326,20 @@ the actual embedding endpoint in CI.
 probed dimensions and the code's index version (`v2`) determine the vector table.
 Tables use `e_v2_<model stem>_<model hash>` (Postgres adds `data_`). A changed
 model or index version needs its own new index; old tables and their rows remain.
-Search and the eval runner select the current version. Ingestion and questions
-currently embed plain text; separate passage and
-query functions allow a future role contract. LlamaIndex owns insertion and exact
-pgvector retrieval; there is no approximate vector index.
+Search and the eval runner select the current version.
+`EMBEDDING_ROLES` defaults to `false`; only the exact value `true` enables roles.
+Off sends the original request without an `input_type` field. On adds
+`input_type: query` for questions and `input_type: passage` for passages through
+the client's `extra_body`, leaving text unchanged. The gateway supplies each
+purpose's role wording.
+
+Role indexes use `e_v2r_<model stem>_<model hash>` so `embed` roles never reuse a
+plain table. **Table rule:** `embed-large` always uses the plain `e_v2_` name,
+with roles on or off, because its passage role leaves passage vectors unchanged.
+One plain index therefore serves both of its query modes. The role mark still
+fits PostgreSQL's identifier limit. The student app stays on `embed`, roles off,
+with its existing table throughout the comparison. LlamaIndex owns insertion
+and exact pgvector retrieval; there is no approximate vector index.
 
 Run one ingest at a time, manually and detached, choosing ids from the manifest:
 
@@ -355,6 +365,40 @@ book is complete and no ingest is running. Nothing deletes or overwrites the old
 index. Ingesting on the shared CPU model slows searches in both projects; arrange
 long runs overnight with the owner. Before any ingest, search returns a clear
 "No index yet" response for the current model.
+
+### Embedding comparison arms
+
+| Arm | `EMBEDDING_PURPOSE` | `EMBEDDING_ROLES` | Index |
+| --- | --- | --- | --- |
+| A | `embed` | `false` | Existing plain table |
+| B | `embed` | `true` | Separate role table |
+| C | `embed-large` | `false` | New plain table |
+| D | `embed-large` | `true` | C's plain table |
+
+After merging, check no ingest container is running and restart
+`med-ask.service` to rebuild the shared image. Leave the app's settings at A.
+For B and C, run the following detached commands **one at a time**, waiting for
+successful completion before starting the next book or arm:
+
+```sh
+# B: repeat for passarge and alberts after mathews completes.
+docker compose --profile ingest run -d --rm -e EMBEDDING_PURPOSE=embed -e EMBEDDING_ROLES=true ingest ingest mathews
+# C: repeat for passarge and alberts after mathews completes.
+docker compose --profile ingest run -d --rm -e EMBEDDING_PURPOSE=embed-large -e EMBEDDING_ROLES=false ingest ingest mathews
+docker compose --profile ingest run --rm ingest status mathews passarge alberts
+```
+
+D needs no additional ingest. Confirm all current unique passage ids are stored
+for each book in both new tables; a duplicate extracted passage is stored once.
+These runs can take days on the shared CPU. Keep them detached and monitor
+progress and rates. Existing tables are preserved.
+
+After the owner chooses an arm, set **both** `EMBEDDING_PURPOSE` and
+`EMBEDDING_ROLES` in the server environment to that arm's values and restart
+`med-ask.service` when no ingest is running. All its books must already be fully
+indexed. Compose passes these settings to app, public and ingest. Changing the
+two settings back to A and restarting restores the baseline table without
+changing any stored rows.
 
 Every passage has a metadata kind: `content`, `summary`, `glossary`, `exercise`,
 or `references`. The nearest recognised heading in its section path sets the kind,
@@ -481,12 +525,30 @@ docker compose --profile ingest run --rm ingest eval
 docker compose --profile ingest run --rm ingest eval --purpose <purpose>
 ```
 
-`--purpose` defaults to `EMBEDDING_PURPOSE`. Only records with status `confirmed`
+`--purpose` defaults to `EMBEDDING_PURPOSE`. `--roles` and `--no-roles` override
+`EMBEDDING_ROLES` for the run. Only records with status `confirmed`
 are scored; `--status pages_open` (repeatable) adds others for diagnostics. The
 run never grades, generates or logs a question. It prints a short summary and
-writes `/data/originals/eval/runs/run-<UTC time>-<purpose>-<suffix>.json`, never
+writes `/data/originals/eval/runs/run-<UTC time>-<purpose>-roles-<on|off>-<suffix>.json`, never
 overwriting. Both hold ids, scores, ranks, page numbers and timings only; no
-question text.
+question text. The file records `purpose` and boolean `roles`, and summaries
+and comparisons show both. Older result files without `roles` mean roles off.
+
+Run all four arms after B and C are complete:
+
+```sh
+docker compose --profile ingest run --rm ingest eval --purpose embed --no-roles
+# Keep this result filename as A.
+docker compose --profile ingest run --rm ingest eval --purpose embed --roles
+# Keep this result filename as B.
+docker compose --profile ingest run --rm ingest eval --purpose embed-large --no-roles
+# Keep this result filename as C.
+docker compose --profile ingest run --rm ingest eval --purpose embed-large --roles
+# Keep this result filename as D.
+docker compose --profile ingest run --rm ingest eval --compare <A.json> <B.json>
+docker compose --profile ingest run --rm ingest eval --compare <A.json> <C.json>
+docker compose --profile ingest run --rm ingest eval --compare <A.json> <D.json>
+```
 
 What is scored:
 

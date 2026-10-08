@@ -40,7 +40,7 @@ def evaluate(args, parser):
         database = Database(os.environ["DATABASE_URL"])
         database.ensure()
         books = load_manifest(Path(os.environ.get("SOURCES_DIR", "/data/sources")))
-        endpoint = Endpoint(args.purpose)
+        endpoint = Endpoint(args.purpose, args.roles)
         run_eval(
             eval_file,
             runs,
@@ -48,6 +48,7 @@ def evaluate(args, parser):
             lambda question: search(question, endpoint, database),
             endpoint.purpose,
             args.status or ["confirmed"],
+            roles=endpoint.roles,
         )
         return 0
     except EvalError as error:
@@ -67,6 +68,12 @@ def main():
     evaluation = commands.add_parser("eval")
     evaluation.add_argument(
         "--purpose", help="Embedding purpose to evaluate (default EMBEDDING_PURPOSE)"
+    )
+    evaluation.add_argument(
+        "--roles",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Query roles on/off (default EMBEDDING_ROLES)",
     )
     evaluation.add_argument(
         "--status",
