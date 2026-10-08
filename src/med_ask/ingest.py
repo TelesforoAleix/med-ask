@@ -83,7 +83,10 @@ def main():
     database = Database(os.environ["DATABASE_URL"])
     database.ensure()
     if args.command == "export-questions":
-        path = database.export(Path("/data/originals"))
+        try:
+            path = database.export(Path("/data/originals"))
+        except ValueError as error:
+            parser.exit(1, f"export-questions: {error}\n")
         print(f"Exported {path} ({path.stat().st_size} bytes)", flush=True)
         return
     books = load_manifest(Path(os.environ.get("SOURCES_DIR", "/data/sources")))

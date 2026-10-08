@@ -27,6 +27,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - name: Verify question-export units
+        run: systemd-analyze verify deploy/med-ask-export.service deploy/med-ask-export.timer
       - uses: astral-sh/setup-uv@v6
         with:
           python-version: '3.13'

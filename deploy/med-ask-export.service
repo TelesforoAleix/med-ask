@@ -1,0 +1,11 @@
+[Unit]
+Description=Export med-ask question log
+ConditionPathIsMountPoint=/srv/homelab
+After=med-ask.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/srv/homelab/med-ask
+ExecCondition=/usr/bin/systemctl is-active --quiet med-ask.service
+ExecStart=/usr/bin/docker compose --profile ingest run --rm --no-deps --pull never --volume /srv/homelab/med-ask/src:/export-src:ro --env PYTHONPATH=/export-src ingest export-questions
+TimeoutStartSec=0
