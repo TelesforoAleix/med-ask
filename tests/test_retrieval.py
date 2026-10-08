@@ -87,6 +87,7 @@ def test_evidence_and_plain_embedding_text():
         label="synthetic: pdf pages 1–2 <print pages: 7–8>",
         score=0.73,
         neighbours=[],
+        kind="content",
     )
     from llama_index.core.schema import MetadataMode
 
@@ -412,7 +413,14 @@ def test_search_candidate_count_and_similarity_order(monkeypatch, k):
     evidence, _, _ = search(
         "Invented question", FakeEndpoint(), database, lambda *a: store, **options
     )
-    index.as_retriever.assert_called_once_with(similarity_top_k=k)
+    from llama_index.core.vector_stores import FilterOperator
+
+    kwargs = index.as_retriever.call_args.kwargs
+    assert kwargs["similarity_top_k"] == k
+    kind_filter = kwargs["filters"].filters[0]
+    assert kind_filter.key == "kind"
+    assert kind_filter.operator == FilterOperator.IN
+    assert kind_filter.value == ["content", "summary", "glossary"]
     assert [e.score for e in evidence] == [m.score for m in matches]
     assert len(evidence) == k
 
@@ -446,3 +454,61 @@ def test_real_question_fields_translation_cache_and_export(tmp_path, real_databa
     assert row["comment"] == "Invented comment"
     assert row["language"] == "ca" and row["ungraded_count"] == 1
     assert row["grades"] == grades and row["answer"] == "Invented answer. [1]"
+
+
+def test_index_version_and_kind_do_not_change_embedding_or_passage_id():
+    import re
+
+    from llama_index.core.schema import MetadataMode
+
+    from med_ask.retrieval import INDEX_VERSION
+
+    passage = make_passage(0)
+    identity = passage_id(passage)
+    passage.kind = "summary"
+    node = passage_nodes([passage], "Title")[0]
+    assert node.metadata["kind"] == evidence_from_node(node).kind == "summary"
+    assert node.get_content(metadata_mode=MetadataMode.EMBED) == passage.text
+    assert node.node_id == identity
+    model = "synthetic-v1"
+    old_table = (
+        "e_"
+        + re.sub(r"[^a-z0-9]+", "_", model)
+        + "_"
+        + hashlib.sha256(model.encode()).hexdigest()[:16]
+    )
+    assert INDEX_VERSION == "v2"
+    assert model_table(model) == old_table.replace("e_", "e_v2_", 1)
+    assert model_table(model) != old_table
+
+
+def test_real_pgvector_filters_kinds_before_top_k(real_database):
+    from med_ask.retrieval import managed_store, vector_store
+
+    endpoint = FakeEndpoint(model="synthetic-" + uuid4().hex)
+    table = model_table(endpoint.model)
+    real_database.register(table, endpoint.model, endpoint.dimensions)
+    passages = [
+        make_passage(i, section=(heading,))
+        for i, heading in enumerate(
+            ["PROBLEMS"] * 35 + ["References"] * 35 + ["Body", "Summary", "Glossary"]
+        )
+    ]
+    nodes = passage_nodes(passages, "Invented title")
+    with managed_store(
+        vector_store, real_database.url, table, endpoint.dimensions, setup=True
+    ) as store:
+        from llama_index.core import VectorStoreIndex
+
+        index = VectorStoreIndex.from_vector_store(
+            store,
+            embed_model=PurposeEmbedding(endpoint, endpoint.model, endpoint.dimensions),
+        )
+        index.insert_nodes(nodes)
+        assert len(store.get_nodes(node_ids=[n.node_id for n in nodes])) == 73
+    evidence, selected_table, _ = search(
+        "Invented question", endpoint, real_database, k=30
+    )
+    assert selected_table == table
+    assert len(evidence) == 3
+    assert {e.kind for e in evidence} == {"content", "summary", "glossary"}

@@ -285,8 +285,11 @@ the actual embedding endpoint in CI.
 
 `MODEL_BASE_URL` and `MODEL_API_KEY` configure the compatible endpoint, and
 `EMBEDDING_PURPOSE` defaults to `embed`. The endpoint's reported identity and
-probed dimensions determine the vector table. A changed model needs its own new
-index. Ingestion and questions currently embed plain text; separate passage and
+probed dimensions and the code's index version (`v2`) determine the vector table.
+Tables use `e_v2_<model stem>_<model hash>` (Postgres adds `data_`). A changed
+model or index version needs its own new index; old tables and their rows remain.
+Search and the eval runner select the current version. Ingestion and questions
+currently embed plain text; separate passage and
 query functions allow a future role contract. LlamaIndex owns insertion and exact
 pgvector retrieval; there is no approximate vector index.
 
@@ -304,9 +307,37 @@ docker compose --profile ingest run --rm ingest status
 Each passage has a hash of book id, PDF pages and original text. A repeated command
 skips stored passages. Each completed passage is committed, so interruption loses
 no committed progress. `status` counts current extracted passage ids against those
-stored. Ingesting on the shared CPU model slows searches in both projects; arrange
+stored, for every recorded table, including previous versions. To switch versions
+on the server, pull the merged code and build the shared image with the first
+`docker compose --profile ingest run --build -d --rm ingest ingest <id>`.
+The running app and public containers keep their existing image and old index.
+Ingest all three books one at a time, then confirm stored = extracted for each
+book in the new table with `status`. Restart `med-ask.service` only after every
+book is complete and no ingest is running. Nothing deletes or overwrites the old
+index. Ingesting on the shared CPU model slows searches in both projects; arrange
 long runs overnight with the owner. Before any ingest, search returns a clear
 "No index yet" response for the current model.
+
+Every passage has a metadata kind: `content`, `summary`, `glossary`, `exercise`,
+or `references`. The nearest recognised heading in its section path sets the kind,
+reading upward through nested headings. Matching ignores case, surrounding
+whitespace and spaces within letter-spaced titles; unknown headings mean content.
+The vocabulary covers Summary/Resumen, Glossary/Glosario, Problems/Problemas,
+Respuestas a problemas/Respuestas a los problemas, Reference/References,
+Bibliografía, General References/Referencias generales, and Selected Introductory
+Reading. Kind changes neither the passage hash nor its embedding input.
+All kinds are stored. Vector retrieval filters to content, summary and glossary
+before selecting candidates; exercises and references are never candidates,
+including in retrieval eval. Summary and glossary appear beside the source label
+on screen.
+
+Unfinished content sentences are joined across pages in the same book and exact
+section when the next passage starts in lower case or the first ends in a
+hyphenated word. Only pages without body passages may intervene, so a figure-only
+page or a caption before the continuation no longer breaks the join. A trailing
+hyphen is removed and the word rejoined; PDF and verified printed page ranges
+extend across the join. The additional joins exclude inherited OCR and every
+other kind, and preserve the extractor's other passage boundaries.
 
 `POST /api/search` accepts `{"question":"…"}`. The app retrieves 30 similarity
 candidates through LlamaIndex, then sends the question and one original passage
