@@ -147,13 +147,15 @@ def has_ink(page):
 def failed_rules(
     text, language, source, ink, candidates, neighbours=(), finish_reason="stop"
 ):
-    """1. Check incomplete replies, text missing on inked pages, and book language.
+    """1. Skip hidden placeholders, then check incomplete replies and missing text.
     2. Keep publisher text except nearly empty pages with ink; check OCR language.
     3. Measure malformed word shapes only when at least 50 tokens are available.
     4. Require a printed number for OCR; reject conflicts with nearby numbers.
     5. Return short reason codes, never source text.
     """
     reasons = []
+    if source == "hidden":
+        return reasons
     if source == "ocr" and finish_reason == "length":
         reasons.append("token-limit")
     if len(text.strip()) < EMPTY_MIN and ink:
@@ -223,7 +225,7 @@ def save_reading(book_id, page, record, root=ROOT):
 
 
 def inspect_book(book, root=ROOT):
-    """1. Read existing PDF text, provenance, and margin candidates in memory.
+    """1. Read PDF provenance and margins, excluding hidden page placeholders.
     2. Substitute the best current-version reading and its margin candidates.
     3. Apply rules with nearby candidates and return page diagnostics without writes.
     """
@@ -232,8 +234,14 @@ def inspect_book(book, root=ROOT):
         for index, page in enumerate(doc, 1):
             blocks = _read_blocks(page)
             source = _classify(page, blocks, page.get_image_info())
-            record = load_reading(book.id, index, root)
-            text = record["text"] if record else page.get_text()
+            record = None if source == "hidden" else load_reading(book.id, index, root)
+            text = (
+                ""
+                if source == "hidden"
+                else record["text"]
+                if record
+                else page.get_text()
+            )
             candidates = (
                 reading_candidates(text)
                 if record
@@ -244,7 +252,7 @@ def inspect_book(book, root=ROOT):
                     pdf_page=index,
                     text=text,
                     text_source="ocr" if record else source,
-                    ink=has_ink(page),
+                    ink=False if source == "hidden" else has_ink(page),
                     candidates=candidates,
                     record=record,
                     finish_reason=record["finish_reason"] if record else "stop",
@@ -270,7 +278,7 @@ def inspect_book(book, root=ROOT):
 
 
 def read_book(book, endpoint, root=ROOT, limit=None, output=print):
-    """1. Apply rules to every page's existing text and resume current readings.
+    """1. Skip hidden placeholders, check existing text, and resume current readings.
     2. Read failing pages at 300 DPI, one at a time; persist every completed reply.
     3. Retry a failing upright reply once at 180 degrees and retain fewer failures.
     4. Stop cleanly when vision is unavailable, keeping durable progress.
@@ -280,6 +288,8 @@ def read_book(book, endpoint, root=ROOT, limit=None, output=print):
     read = 0
     with pymupdf.open(book.path) as doc:
         for page in pages:
+            if page["text_source"] == "hidden":
+                continue
             record = page["record"]
             if record and record["complete"]:
                 continue
@@ -370,7 +380,7 @@ def read_book(book, endpoint, root=ROOT, limit=None, output=print):
 
 def queue_summary(book, root=ROOT):
     """1. Apply the rules to the best available text for every page.
-    2. List failing PDF pages, reason counts, and kept, passing, or queued totals.
+    2. List failures and totals for hidden, kept, read and passing, or queued pages.
     3. Summarize reading times and rotation rescues without exposing book text.
     """
     pages = inspect_book(book, root)
@@ -381,11 +391,17 @@ def queue_summary(book, root=ROOT):
     ]
     records = [p["record"] for p in pages if p["record"]]
     readings = [r for record in records for r in record["readings"]]
-    shares = sorted(nonword_share(p["text"])[0] for p in pages)
+    shares = sorted(
+        nonword_share(p["text"])[0] for p in pages if p["text_source"] != "hidden"
+    )
     return dict(
         book_id=book.id,
         pages=len(pages),
-        kept=sum(not p["record"] and not p["rules_failed"] for p in pages),
+        hidden=sum(p["text_source"] == "hidden" for p in pages),
+        kept=sum(
+            p["text_source"] != "hidden" and not p["record"] and not p["rules_failed"]
+            for p in pages
+        ),
         read_passing=sum(bool(p["record"]) and not p["rules_failed"] for p in pages),
         queued=len(queue),
         queue=queue,

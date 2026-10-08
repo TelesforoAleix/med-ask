@@ -320,14 +320,16 @@ def search(question, endpoint, database, store_factory=vector_store, k=10):
 
 
 def ingest_status(books, database, store_factory=vector_store):
-    """1. Extract each selected book to count its current passages.
+    """1. Extract each selected book to count current passages and hidden pages.
     2. Read each recorded model through LlamaIndex's metadata filters.
     3. Report how many current stable ids are stored for each book and model.
     """
     models = database.models()
     rows = []
     for book in books:
-        passages = extract_book(book.path, book.id, book.language).passages
+        extraction = extract_book(book.path, book.id, book.language)
+        passages = extraction.passages
+        hidden = sum(page.text_source == "hidden" for page in extraction.pages)
         identities = {passage_id(p) for p in passages}
         for table, model, dimensions in models:
             record = database.model(table)
@@ -349,6 +351,7 @@ def ingest_status(books, database, store_factory=vector_store):
                     table=table,
                     stored=stored,
                     extracted=len(passages),
+                    hidden=hidden,
                 )
             )
         if not models:
@@ -359,6 +362,7 @@ def ingest_status(books, database, store_factory=vector_store):
                     table=None,
                     stored=0,
                     extracted=len(passages),
+                    hidden=hidden,
                 )
             )
     return rows

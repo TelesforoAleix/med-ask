@@ -1185,3 +1185,42 @@ def test_page_join_hyphen_allows_uppercase_and_preserves_unknown_printed_range()
     assert len(joined) == 1 and "preExisting" in joined[0].text
     assert joined[0].printed_pages is None
     assert joined[0].printed_page_reason == "no-header-number"
+
+
+@pytest.mark.parametrize(
+    "placeholder", ["Hidden page", " Hidden   page ", "Hidden\npage"]
+)
+def test_hidden_placeholder_page_account_and_missing_gap(pdf, placeholder):
+    path = pdf(
+        [
+            [header(10), body("A synthetic source paragraph continues")],
+            [body(placeholder)],
+            [header(12), body("and finishes after the missing source page.")],
+        ]
+    )
+    result = extract(path)
+    assert len(result.passages) == 2
+    assert all(p.pdf_pages[0] == p.pdf_pages[1] for p in result.passages)
+    account = result.pages[1]
+    assert account.text_source == "hidden" and not account.has_text
+    assert account.printed_page is None and account.printed_page_method == "none"
+    assert account.reason == "hidden"
+    assert "hidden: 1" in report(result, [])
+    assert not result.captions
+
+
+def test_hidden_phrase_in_source_prose_is_not_a_placeholder(pdf):
+    result = extract(
+        pdf(
+            [
+                [
+                    body(
+                        "The Hidden page phrase is mentioned within "
+                        "this synthetic source paragraph."
+                    )
+                ]
+            ]
+        )
+    )
+    assert len(result.passages) == 1
+    assert result.pages[0].has_text and result.pages[0].text_source == "born-digital"

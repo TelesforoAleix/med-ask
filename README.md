@@ -381,6 +381,12 @@ It uses no second model and never merges two readings.
 Every page is checked before a call. Born-digital publisher text is read only
 when it is nearly empty while the page shows ink. Readings and inherited OCR also
 get language, malformed-word and printed-number checks. Blank pages are kept.
+A page whose whole text is `Hidden page` (ignoring surrounding or repeated
+whitespace) is a missing-content placeholder. Its page account records `hidden`;
+it produces no passage, is never read or queued, and is counted separately as
+`hidden` in extraction reports, `ocr-queue`, and ingestion `status`. Missing hidden
+pages prevent paragraph joins across them. Existing reading files are preserved
+but ignored for these placeholders.
 The inspectable thresholds in `ocr.py` are:
 
 | Reason | Rule |
@@ -415,8 +421,8 @@ docker logs --tail 20 <container-id>
 
 `ocr` and `ocr-queue` need the external manifest but not Postgres. The queue lists
 PDF pages, short reason codes and counts, including pages awaiting a first reading.
-It reports kept / read and passing / queued totals, word-shape quantiles, seconds
-for completed calls, rotation retries and rescues. It sends nothing elsewhere.
+It reports hidden / kept / read and passing / queued totals, word-shape quantiles,
+seconds for completed calls, rotation retries and rescues. It sends nothing elsewhere.
 A failed upright reading gets exactly one retry with its page rotated 180 degrees;
 fewer failed rules wins, with upright winning ties. Both replies remain intact.
 
