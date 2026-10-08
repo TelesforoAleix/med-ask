@@ -32,6 +32,19 @@ class Database:
                 thumbs text CHECK (thumbs IN ('up', 'down')), comment text,
                 feedback_at timestamptz)""")
 
+            for column in (
+                "language text",
+                "grades jsonb NOT NULL DEFAULT '[]'",
+                "ungraded_count integer NOT NULL DEFAULT 0",
+                "answer text",
+            ):
+                db.execute(
+                    "ALTER TABLE medask_questions ADD COLUMN IF NOT EXISTS " + column
+                )
+            db.execute("""CREATE TABLE IF NOT EXISTS medask_translations (
+                passage_id text NOT NULL, language text NOT NULL, text text NOT NULL,
+                PRIMARY KEY (passage_id, language))""")
+
     def models(self):
         with self.connect() as db:
             return db.execute(
@@ -69,20 +82,65 @@ class Database:
                 (table, book, count),
             )
 
-    def begin_question(self, question, asker):
+    def begin_question(self, question, asker, language="en"):
         identity = str(uuid4())
         with self.connect() as db:
             db.execute(
-                "INSERT INTO medask_questions (id,question,asker) VALUES (%s,%s,%s)",
-                (identity, question, asker),
+                "INSERT INTO medask_questions (id,question,asker,language) "
+                "VALUES (%s,%s,%s,%s)",
+                (identity, question.replace("\x00", ""), asker, language),
             )
         return identity
 
-    def finish_question(self, identity, table, evidence):
+    def finish_question(self, identity, table, evidence, grades=None, ungraded_count=0):
         with self.connect() as db:
             db.execute(
-                "UPDATE medask_questions SET vector_table=%s,evidence=%s WHERE id=%s",
-                (table, Jsonb(evidence), identity),
+                "UPDATE medask_questions SET vector_table=%s,evidence=%s,grades=%s,"
+                "ungraded_count=%s WHERE id=%s",
+                (table, Jsonb(evidence), Jsonb(grades or []), ungraded_count, identity),
+            )
+
+    def question(self, identity, asker):
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT question,language,evidence,answer,grades FROM medask_questions "
+                "WHERE id=%s AND asker=%s",
+                (identity, asker),
+            ).fetchone()
+        return (
+            dict(
+                zip(
+                    ("question", "language", "evidence", "answer", "grades"),
+                    row,
+                    strict=True,
+                )
+            )
+            if row
+            else None
+        )
+
+    def save_answer(self, identity, asker, answer):
+        with self.connect() as db:
+            db.execute(
+                "UPDATE medask_questions SET answer=%s WHERE id=%s AND asker=%s",
+                (answer.replace("\x00", ""), identity, asker),
+            )
+
+    def translation(self, passage, language):
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT text FROM medask_translations "
+                "WHERE passage_id=%s AND language=%s",
+                (passage, language),
+            ).fetchone()
+        return row[0] if row else None
+
+    def save_translation(self, passage, language, text):
+        with self.connect() as db:
+            db.execute(
+                "INSERT INTO medask_translations VALUES (%s,%s,%s) "
+                "ON CONFLICT (passage_id,language) DO NOTHING",
+                (passage, language, text),
             )
 
     def feedback(self, identity, asker, thumbs, comment):
@@ -90,7 +148,12 @@ class Database:
             row = db.execute(
                 "UPDATE medask_questions SET thumbs=%s,comment=%s,"
                 "feedback_at=now() WHERE id=%s AND asker=%s RETURNING id",
-                (thumbs, comment, identity, asker),
+                (
+                    thumbs,
+                    comment.replace("\x00", "") if comment is not None else None,
+                    identity,
+                    asker,
+                ),
             ).fetchone()
         return row is not None
 

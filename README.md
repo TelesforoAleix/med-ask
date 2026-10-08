@@ -1,7 +1,8 @@
 # med-ask
 
 med-ask searches original textbook passages, with their book, PDF page, printed
-page when known, and neighbouring source context. It generates no answers.
+page when known, and neighbouring source context. It checks relevance, then
+shows a short generated answer separately from the original passages.
 Results come from a provisional search model and may change. Source pages render
 on request in a side panel; no page images are stored.
 
@@ -307,24 +308,68 @@ stored. Ingesting on the shared CPU model slows searches in both projects; arran
 long runs overnight with the owner. Before any ingest, search returns a clear
 "No index yet" response for the current model.
 
-`POST /api/search` accepts `{"question":"…"}` and returns the ten nearest original
-passages in similarity order, a question id, and embedding/search seconds. Each
-item includes labels, language, section, OCR provenance and at most one neighbour
-on either side in the same section. Neighbours are secondary context capped at
-120 words each. **from OCR — check the page** marks inherited OCR. Review source
-fetches `GET /api/page/<book-id>/<one-based-pdf-page>` as an approximately
-1,000-pixel-wide PNG held only in memory, with private one-hour cache headers.
+`POST /api/search` accepts `{"question":"…"}`. The app retrieves 30 similarity
+candidates through LlamaIndex, then sends the question and one original passage
+per `grade` call. Calls run in parallel, capped at 15 per search by
+`GRADE_CONCURRENCY`, with a six-second `GRADE_TIMEOUT`. Only complete yes/no
+replies count; errors, timeouts and other replies leave a candidate ungraded.
+There are no retries or fallback purposes. These settings are read from the
+application process environment; Compose uses the code defaults.
 
-Every valid question is logged before attempting search, including attempts when
-no index exists. The app creates its own bookkeeping tables if absent. The log
-stores the question, asker, timestamp, vector table used, returned evidence ids,
-scores and labels, and optional feedback. It helps the owner review and improve
-search; no grading or generated answer is stored. The UI offers thumbs up/down,
-an optional comment, and Save feedback. `POST /api/feedback` updates only the
-requester's own existing question id; private users share the literal `tailnet`
+The screen says “checking which passages answer this…” until grading finishes.
+Only passing passages appear, grouped by book. Passages within a book follow
+similarity order, and books follow their best passage. Numbers run across books.
+The response includes `groups`, flat numbered `evidence`, `language`,
+`ungraded_count`, `not_found`, and embedding, grading and total search seconds.
+Candidates that could not be checked are counted and excluded. When none passes,
+the screen says “Not found. These books don't cover the question” and requests
+no answer. If checks failed, that limitation is displayed beside the result.
+
+Each source includes labels, language, section, OCR provenance and at most one
+neighbour on either side in the same section. Neighbours are secondary source
+context capped at 120 words each; they are not answer inputs or numbered evidence.
+**from OCR — check the page** marks inherited OCR. Review source fetches
+`GET /api/page/<book-id>/<one-based-pdf-page>` as an approximately 1,000-pixel-wide
+PNG held only in memory, with private one-hour cache headers.
+
+After evidence appears, the browser separately requests `POST /api/answer` with
+`question_id`. The `chat` purpose receives only the question and numbered passing
+original passages. Its prompt requires at most 150 words in the question's
+language, a citation on every sentence, explicit gaps, disagreements, and thin
+support. Sentence JSON is validated before attaching citations: empty citations,
+unknown numbers, multiple sentences in one item, malformed output and answers
+over 150 words are rejected. A generation failure leaves the evidence visible.
+The **Generated answer** panel sits above, visibly apart from the authors' text.
+Citations identify source passages; factual support still needs source review.
+
+Language detection runs locally with only English, Spanish and Catalan profiles.
+Text without detectable letters defaults to English; short ambiguous questions
+can be misclassified. **Open translation** appears only across languages.
+`POST /api/translate` accepts `question_id` and a displayed `passage_id`, sends
+that original alone to `translate`, and returns generated text alongside the
+original. Postgres caches it by stable passage id and target language; repeat
+requests return `cached: true` without a model call. The browser can also reopen
+an already loaded translation immediately. The rebuildable cache is excluded
+from question exports and originals. `GENERATION_TIMEOUT` defaults to 20 seconds
+for answers and translations. All purposes use `MODEL_BASE_URL` and
+`MODEL_API_KEY`; no asker identity is sent to any purpose.
+
+Every valid question is logged before search, including attempts with no index.
+The app creates bookkeeping tables and adds missing log columns automatically.
+The log stores the NUL-stripped question, asker, timestamp, detected language,
+vector table, every candidate's id/score/label and yes/no/ungraded flag, ungraded
+count, numbered passing evidence snapshots, generated answer, and optional
+feedback. Old ungraded log rows cannot generate answers. Question exports include
+these fields but exclude the translation cache.
+
+Thumbs and comments judge the whole response and sit below answer and evidence.
+NUL characters are removed from questions and comments before storage.
+`POST /api/feedback`, answer and translation requests are limited to the
+requester's existing question id; private users share the literal `tailnet`
 identity. In `public` a missing Access email header is rejected, and two Access
-identities cannot update one another's feedback. Keep `public` reachable only
-through the Access-protected tunnel; its email header is trusted on that boundary.
+identities cannot read or update one another's response through these routes.
+Keep `public` reachable only through the Access-protected tunnel; its email header
+is trusted on that boundary.
 
 Export the whole question log by hand:
 

@@ -1,7 +1,6 @@
 """The med-ask HTTP application."""
 
 import os
-from dataclasses import asdict
 from io import BytesIO
 from pathlib import Path
 from time import perf_counter
@@ -10,10 +9,19 @@ from uuid import UUID
 import psycopg
 import pymupdf
 from flask import Flask, abort, jsonify, request, send_file, send_from_directory
+from werkzeug.exceptions import HTTPException
 from werkzeug.utils import safe_join
 
 from med_ask.database import Database
 from med_ask.embedding import Endpoint
+from med_ask.generation import (
+    GenerationEndpoint,
+    detect_language,
+    generate_answer,
+    grade_candidates,
+    group_evidence,
+    translate_passage,
+)
 from med_ask.manifest import load_manifest
 from med_ask.retrieval import NoIndex, search
 
@@ -69,25 +77,43 @@ def create_app() -> Flask:
         who = asker()
         body = request.get_json(silent=True)
         question = body.get("question") if isinstance(body, dict) else None
-        if not isinstance(question, str) or not 1 <= len(question.strip()) <= 4000:
+        if isinstance(question, str):
+            question = question.replace("\x00", "").strip()
+        if not isinstance(question, str) or not 1 <= len(question) <= 4000:
             return jsonify(error="Enter a question of 1–4000 characters"), 400
         question = question.strip()
         started = perf_counter()
         identity = None
         try:
             db = database()
-            identity = db.begin_question(question, who)
+            language = detect_language(question)
+            identity = db.begin_question(question, who, language)
             endpoint = app.config.get("EMBEDDING_ENDPOINT") or Endpoint()
-            evidence, table, embedding_seconds = search(question, endpoint, db)
+            candidates, table, embedding_seconds = search(question, endpoint, db, k=30)
+            generation = app.config.get("GENERATION_ENDPOINT") or GenerationEndpoint()
+            flags, grading_seconds = grade_candidates(question, candidates, generation)
+            groups = group_evidence(candidates, flags, language)
+            evidence = [item for group in groups for item in group["evidence"]]
+            ungraded = flags.count(None)
             db.finish_question(
                 identity,
                 table,
-                [dict(id=e.id, score=e.score, label=e.label) for e in evidence],
+                evidence,
+                [
+                    dict(id=e.id, score=e.score, label=e.label, grade=flag)
+                    for e, flag in zip(candidates, flags, strict=True)
+                ],
+                ungraded,
             )
             return jsonify(
                 question_id=identity,
-                evidence=[asdict(e) for e in evidence],
+                language=language,
+                evidence=evidence,
+                groups=groups,
+                not_found=not evidence,
+                ungraded_count=ungraded,
                 embedding_seconds=embedding_seconds,
+                grading_seconds=grading_seconds,
                 search_seconds=perf_counter() - started,
             )
         except NoIndex as error:
@@ -99,6 +125,86 @@ def create_app() -> Flask:
                 error="Search is temporarily unavailable. Please try again.",
                 question_id=identity,
             ), 503
+
+    def owned_question(db, who):
+        body = request.get_json(silent=True)
+        identity = body.get("question_id") if isinstance(body, dict) else None
+        try:
+            UUID(identity)
+        except (ValueError, TypeError, AttributeError):
+            abort(400, description="Invalid question id")
+        row = db.question(identity, who)
+        if row is None:
+            abort(404)
+        passing_ids = {
+            grade["id"] for grade in row["grades"] if grade.get("grade") is True
+        }
+        row["evidence"] = [
+            item for item in row["evidence"] if item["id"] in passing_ids
+        ]
+        return identity, row, body
+
+    @app.post("/api/answer")
+    def answer_route():
+        who = asker()
+        try:
+            db = database()
+            identity, row, _ = owned_question(db, who)
+            if not row["evidence"]:
+                return jsonify(error="No passing evidence for an answer"), 409
+            started = perf_counter()
+            text = row["answer"]
+            if text is None:
+                endpoint = app.config.get("GENERATION_ENDPOINT") or GenerationEndpoint()
+                text = generate_answer(
+                    row["question"], row["language"], row["evidence"], endpoint
+                )
+                db.save_answer(identity, who, text)
+            return jsonify(
+                answer=text, generated=True, answer_seconds=perf_counter() - started
+            )
+        except (psycopg.Error, ValueError, KeyError, TypeError):
+            return jsonify(
+                error="A supported, cited answer could not be generated"
+            ), 503
+        except Exception as error:
+            if isinstance(error, HTTPException):
+                raise
+            return jsonify(error="Answer is temporarily unavailable"), 503
+
+    @app.post("/api/translate")
+    def translate_route():
+        who = asker()
+        try:
+            db = database()
+            _, row, body = owned_question(db, who)
+            passage = next(
+                (
+                    item
+                    for item in row["evidence"]
+                    if item["id"] == body.get("passage_id")
+                ),
+                None,
+            )
+            if passage is None:
+                abort(404)
+            if not passage["translation_available"]:
+                return jsonify(
+                    error="This passage is already in the question's language"
+                ), 400
+            # Look up the cache before constructing the endpoint.
+            cached = db.translation(passage["id"], row["language"])
+            if cached is not None:
+                return jsonify(translation=cached, generated=True, cached=True)
+            endpoint = app.config.get("GENERATION_ENDPOINT") or GenerationEndpoint()
+            text, hit = translate_passage(passage, row["language"], db, endpoint)
+            return jsonify(translation=text, generated=True, cached=hit)
+        except (psycopg.Error, ValueError, KeyError, TypeError):
+            return jsonify(error="Translation is temporarily unavailable"), 503
+        except Exception as error:
+            if isinstance(error, HTTPException):
+                raise
+            return jsonify(error="Translation is temporarily unavailable"), 503
 
     @app.post("/api/feedback")
     def feedback_route():
@@ -119,6 +225,8 @@ def create_app() -> Flask:
             not isinstance(comment, str) or len(comment) > 4000
         ):
             return jsonify(error="Comment must be at most 4000 characters"), 400
+        if isinstance(comment, str):
+            comment = comment.replace("\x00", "")
         try:
             if not database().feedback(identity, who, thumbs, comment):
                 return jsonify(error="Question not found"), 404

@@ -137,15 +137,37 @@ class QuestionMemory:
     def model(self, table):
         return None
 
-    def begin_question(self, question, asker):
+    def begin_question(self, question, asker, language="en"):
         from uuid import uuid4
 
         identity = str(uuid4())
-        self.rows[identity] = dict(question=question, asker=asker)
+        self.rows[identity] = dict(
+            question=question, asker=asker, language=language, answer=None
+        )
         return identity
 
-    def finish_question(self, identity, table, evidence):
-        self.rows[identity].update(table=table, evidence=evidence)
+    def finish_question(self, identity, table, evidence, grades=None, ungraded_count=0):
+        self.rows[identity].update(
+            table=table,
+            evidence=evidence,
+            grades=grades or [],
+            ungraded_count=ungraded_count,
+        )
+
+    def question(self, identity, asker):
+        row = self.rows.get(identity)
+        return row if row and row["asker"] == asker else None
+
+    def save_answer(self, identity, asker, answer):
+        self.rows[identity]["answer"] = answer
+
+    def translation(self, passage, language):
+        return getattr(self, "cache", {}).get((passage, language))
+
+    def save_translation(self, passage, language, text):
+        if not hasattr(self, "cache"):
+            self.cache = {}
+        self.cache[passage, language] = text
 
     def feedback(self, identity, asker, thumbs, comment):
         row = self.rows.get(identity)
@@ -274,8 +296,11 @@ def test_successful_search_logs_labels_and_scores(app, monkeypatch):
         0.5,
     )
     monkeypatch.setattr(
-        "med_ask.search", lambda *args: ([evidence], "synthetic_table", 0.01)
+        "med_ask.search", lambda *args, **kwargs: ([evidence], "synthetic_table", 0.01)
     )
+    generation = MagicMock()
+    generation.complete.return_value = "yes"
+    app.config["GENERATION_ENDPOINT"] = generation
     response = app.test_client().post(
         "/api/search",
         json={"question": "Synthetic question?"},
@@ -285,7 +310,10 @@ def test_successful_search_logs_labels_and_scores(app, monkeypatch):
     assert response.json["evidence"][0]["text"] == evidence.text
     assert response.json["embedding_seconds"] == 0.01
     row = database.rows[response.json["question_id"]]
-    assert row["evidence"] == [dict(id=evidence.id, score=0.5, label=evidence.label)]
+    assert row["evidence"][0]["id"] == evidence.id
+    assert row["grades"] == [
+        dict(id=evidence.id, score=0.5, label=evidence.label, grade=True)
+    ]
 
 
 @pytest.mark.parametrize("question", [None, "", "   ", "x" * 4001, 23, []])
@@ -298,3 +326,176 @@ def test_search_validates_question_before_logging(app, question):
     )
     assert response.status_code == 400
     assert app.config["QUESTION_DATABASE"].rows == {}
+
+
+@pytest.fixture
+def graded_app(app, monkeypatch):
+    from test_generation import candidate
+
+    database = QuestionMemory()
+    generation = MagicMock()
+    generation.complete.side_effect = lambda purpose, messages: (
+        "yes"
+        if purpose == "grade"
+        else '{"sentences":[{"text":"Invented answer.","citations":[1]}]}'
+        if purpose == "chat"
+        else "Invented translation."
+    )
+    app.config.update(
+        QUESTION_DATABASE=database,
+        EMBEDDING_ENDPOINT=MagicMock(),
+        GENERATION_ENDPOINT=generation,
+    )
+    calls = []
+
+    def retrieve(*args, **kwargs):
+        calls.append(kwargs)
+        return [candidate(language="Spanish"), candidate("other")], "synthetic", 0.01
+
+    monkeypatch.setattr("med_ask.search", retrieve)
+    return app, database, generation, calls
+
+
+def test_evidence_then_separate_answer_translation_and_ownership(graded_app):
+    app, database, generation, calls = graded_app
+    client = app.test_client()
+    headers = {"Cf-Access-Authenticated-User-Email": "synthetic@example.invalid"}
+    data = client.post(
+        "/api/search",
+        json={"question": "What is the function of membrane proteins?"},
+        headers=headers,
+    ).json
+    identity = data["question_id"]
+    assert calls == [{"k": 30}]
+    assert data["language"] == "en" and not data["not_found"]
+    assert data["evidence"][0]["translation_available"]
+    assert not data["evidence"][1]["translation_available"]
+    assert [c.args[0] for c in generation.complete.call_args_list] == ["grade", "grade"]
+    assert database.rows[identity]["answer"] is None
+    body = {"question_id": identity}
+    for route in ("/api/answer", "/api/translate"):
+        assert client.post(route, json=body).status_code == 401
+        assert (
+            client.post(
+                route,
+                json=body,
+                headers={"Cf-Access-Authenticated-User-Email": "other@example.invalid"},
+            ).status_code
+            == 404
+        )
+        assert (
+            client.post(route, json={"question_id": "bad"}, headers=headers).status_code
+            == 400
+        )
+    answer = client.post("/api/answer", json=body, headers=headers)
+    assert answer.status_code == 200 and answer.json["generated"]
+    assert answer.json["answer"] == "Invented answer. [1]"
+    assert database.rows[identity]["answer"] == answer.json["answer"]
+    assert client.post("/api/answer", json=body, headers=headers).status_code == 200
+    assert [c.args[0] for c in generation.complete.call_args_list].count("chat") == 1
+    body["passage_id"] = "one"
+    first = client.post("/api/translate", json=body, headers=headers)
+    assert first.status_code == 200 and not first.json["cached"]
+    second = client.post("/api/translate", json=body, headers=headers)
+    assert second.status_code == 200 and second.json["cached"]
+    assert first.json["translation"] == second.json["translation"]
+    assert [c.args[0] for c in generation.complete.call_args_list].count(
+        "translate"
+    ) == 1
+    body["passage_id"] = "other"
+    assert client.post("/api/translate", json=body, headers=headers).status_code == 400
+    body["passage_id"] = "arbitrary"
+    assert client.post("/api/translate", json=body, headers=headers).status_code == 404
+    assert "synthetic@example.invalid" not in str(generation.complete.call_args_list)
+    assert "asker" not in str(generation.complete.call_args_list)
+
+
+@pytest.mark.parametrize(
+    "flags,ungraded", [(["no", "no"], 0), (["no", "maybe"], 1), (["maybe", "maybe"], 2)]
+)
+def test_not_found_and_no_answer_from_failed_grades(graded_app, flags, ungraded):
+    app, database, generation, _ = graded_app
+    generation.complete.side_effect = flags
+    client = app.test_client()
+    headers = {"Cf-Access-Authenticated-User-Email": "synthetic@example.invalid"}
+    response = client.post(
+        "/api/search",
+        json={"question": "What is the function of membrane proteins?"},
+        headers=headers,
+    )
+    assert response.status_code == 200
+    data = response.json
+    assert data["not_found"] and data["evidence"] == data["groups"] == []
+    assert data["ungraded_count"] == ungraded
+    row = database.rows[data["question_id"]]
+    assert row["ungraded_count"] == ungraded and len(row["grades"]) == 2
+    result = client.post(
+        "/api/answer", json={"question_id": data["question_id"]}, headers=headers
+    )
+    assert result.status_code == 409
+    assert generation.complete.call_count == 2
+
+
+def test_nul_question_and_comment_are_removed(graded_app):
+    app, database, _, _ = graded_app
+    client = app.test_client()
+    headers = {"Cf-Access-Authenticated-User-Email": "synthetic@example.invalid"}
+    response = client.post(
+        "/api/search", json={"question": "What\u0000 is a cell?"}, headers=headers
+    )
+    assert response.status_code == 200
+    identity = response.json["question_id"]
+    assert database.rows[identity]["question"] == "What is a cell?"
+    assert (
+        client.post(
+            "/api/feedback",
+            json={"question_id": identity, "comment": "test\u0000 comment"},
+            headers=headers,
+        ).status_code
+        == 200
+    )
+    assert database.rows[identity]["comment"] == "test comment"
+    assert (
+        client.post(
+            "/api/search", json={"question": "\u0000"}, headers=headers
+        ).status_code
+        == 400
+    )
+
+
+def test_invalid_answer_leaves_evidence_and_log_intact(graded_app):
+    app, database, generation, _ = graded_app
+    client = app.test_client()
+    headers = {"Cf-Access-Authenticated-User-Email": "synthetic@example.invalid"}
+    data = client.post(
+        "/api/search", json={"question": "What is a cell?"}, headers=headers
+    ).json
+    generation.complete.side_effect = None
+    generation.complete.return_value = (
+        '{"sentences":[{"text":"Unsupported.","citations":[99]}]}'
+    )
+    response = client.post(
+        "/api/answer", json={"question_id": data["question_id"]}, headers=headers
+    )
+    assert response.status_code == 503
+    row = database.rows[data["question_id"]]
+    assert row["evidence"] and row["answer"] is None
+
+
+def test_old_ungraded_log_row_cannot_generate_answer(graded_app):
+    app, database, generation, _ = graded_app
+    client = app.test_client()
+    headers = {"Cf-Access-Authenticated-User-Email": "synthetic@example.invalid"}
+    result = client.post(
+        "/api/search", json={"question": "What is a cell?"}, headers=headers
+    ).json
+    identity = result["question_id"]
+    database.rows[identity]["grades"] = []
+    generation.complete.reset_mock()
+    assert (
+        client.post(
+            "/api/answer", json={"question_id": identity}, headers=headers
+        ).status_code
+        == 409
+    )
+    generation.complete.assert_not_called()

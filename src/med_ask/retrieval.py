@@ -250,10 +250,10 @@ def ingest_book(book, endpoint, database, store_factory=vector_store, output=pri
         }
 
 
-def search(question, endpoint, database, store_factory=vector_store):
+def search(question, endpoint, database, store_factory=vector_store, k=10):
     """1. Embed the question once and select the reported model's vector table.
     2. Refuse absent tables or a mismatched recorded model or dimension.
-    3. Retrieve the ten nearest passages with LlamaIndex's exact pgvector search.
+    3. Retrieve the requested nearest passages with LlamaIndex's exact search.
     4. Convert passages and same-section neighbours into plain evidence records.
     """
     embedded = embed_query(endpoint, question)
@@ -272,7 +272,7 @@ def search(question, endpoint, database, store_factory=vector_store):
         index = VectorStoreIndex.from_vector_store(
             store, embed_model=PurposeEmbedding(endpoint, embedded.model, dimensions)
         )
-        matches = index.as_retriever(similarity_top_k=10).retrieve(
+        matches = index.as_retriever(similarity_top_k=k).retrieve(
             QueryBundle(query_str=question, embedding=embedded.vectors[0])
         )
         evidence = [

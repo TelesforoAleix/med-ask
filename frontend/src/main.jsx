@@ -24,6 +24,10 @@ function App() {
   const [comment, setComment] = useState('')
   const [feedbackNote, setFeedbackNote] = useState('')
   const [saving, setSaving] = useState(false)
+  const [answer, setAnswer] = useState(null)
+  const [answerNote, setAnswerNote] = useState('')
+  const [translations, setTranslations] = useState({})
+  const requestVersion = useRef(0)
   const closeButton = useRef(null)
   const reviewButton = useRef(null)
   const panel = useRef(null)
@@ -54,21 +58,51 @@ function App() {
 
   async function submit(event) {
     event.preventDefault()
+    const version = ++requestVersion.current
     setBusy(true); setError(''); setResult(null); setPage(null)
+    setAnswer(null); setAnswerNote(''); setTranslations({})
     setThumbs(null); setComment(''); setFeedbackNote('')
     setSearchedQuestion(question.trim())
-    try { setResult(await post('/api/search', { question })) }
-    catch (failure) { setError(failure.message) }
-    finally { setBusy(false) }
+    let found
+    try {
+      found = await post('/api/search', { question })
+      if (version !== requestVersion.current) return
+      setResult(found)
+    } catch (failure) { if (version === requestVersion.current) setError(failure.message) }
+    finally { if (version === requestVersion.current) setBusy(false) }
+    if (!found || found.not_found || version !== requestVersion.current) return
+    setAnswerNote('Generating an answer from the passing passages…')
+    try {
+      const generated = await post('/api/answer', { question_id: found.question_id })
+      if (version === requestVersion.current) { setAnswer(generated.answer); setAnswerNote('') }
+    } catch (failure) { if (version === requestVersion.current) setAnswerNote(failure.message) }
+  }
+
+  async function translate(item) {
+    const version = requestVersion.current
+    if (translations[item.id]?.text) {
+      setTranslations(current => ({ ...current, [item.id]: { ...current[item.id], open: true } }))
+      return
+    }
+    setTranslations(current => ({ ...current, [item.id]: { loading: true, open: true } }))
+    try {
+      const data = await post('/api/translate', { question_id: result.question_id, passage_id: item.id })
+      if (version === requestVersion.current)
+        setTranslations(current => ({ ...current, [item.id]: { text: data.translation, open: true } }))
+    } catch (failure) {
+      if (version === requestVersion.current)
+        setTranslations(current => ({ ...current, [item.id]: { error: failure.message, open: true } }))
+    }
   }
 
   async function feedback(event) {
     event.preventDefault()
+    const version = requestVersion.current
     setSaving(true); setFeedbackNote('')
     try {
       await post('/api/feedback', { question_id: result.question_id, thumbs, comment })
-      setFeedbackNote('Feedback saved.')
-    } catch (failure) { setFeedbackNote(failure.message) }
+      if (version === requestVersion.current) setFeedbackNote('Feedback saved.')
+    } catch (failure) { if (version === requestVersion.current) setFeedbackNote(failure.message) }
     finally { setSaving(false) }
   }
 
@@ -96,12 +130,22 @@ function App() {
         <p id="search-note" className="note">Results come from a provisional search model and may change.</p>
         <p className="note">Questions and feedback are logged with your signed-in identity to improve search.</p>
       </form>
-      <div role="status" aria-live="polite">{error && <p className="error">{error}</p>}</div>
+      <div role="status" aria-live="polite">{busy && <p>checking which passages answer this…</p>}{error && <p className="error">{error}</p>}</div>
       {result && <section aria-label="Search results" aria-busy={busy}>
+        {!result.not_found && <section className="generated answer" aria-label="Generated answer">
+          <h2>Generated answer</h2>
+          <p className="note">Generated from the passages below. Check the original sources.</p>
+          {answer && <p className="answer-text">{answer}</p>}
+          <p role="status">{answerNote}</p>
+        </section>}
         <h2>Original passages</h2>
+        {result.not_found && <p className="not-found">Not found. These books don't cover the question.</p>}
+        {result.ungraded_count > 0 && <p role="status">{result.ungraded_count} passages could not be checked and are excluded.</p>}
         <p className="asked">{searchedQuestion}</p>
-        {result.evidence.map(item => <article key={item.id}>
-          <h3>{item.title}</h3>
+        {result.groups.map(group => <section className="book-group" key={group.book_id} aria-label={group.title}>
+          <h3>{group.title}</h3>
+          {group.evidence.map(item => <article key={item.id} id={`passage-${item.number}`}>
+          <h4>Passage [{item.number}]</h4>
           <p className="source-label">{item.label}</p>
           {item.inherited_ocr && <p className="ocr">from OCR — check the page</p>}
           {item.section_path.length > 0 && <p className="note">{item.section_path.join(' › ')}</p>}
@@ -111,16 +155,28 @@ function App() {
               <small>Preceding passage · {n.label}</small>
               <p>{n.text}{n.truncated ? '…' : ''}</p>
             </blockquote>)}
-          <blockquote className="passage">{item.text}</blockquote>
+          <div className={translations[item.id]?.open ? 'passage-pair' : ''}>
+            <blockquote className="passage">{item.text}</blockquote>
+            {translations[item.id]?.open && <section className="generated translation" aria-label="Generated translation">
+              <h4>Generated translation</h4>
+              {translations[item.id].loading && <p role="status">Translating…</p>}
+              {translations[item.id].error && <p role="alert">{translations[item.id].error}</p>}
+              {translations[item.id].text && <p>{translations[item.id].text}</p>}
+              <button type="button" className="secondary" onClick={() => setTranslations(current => ({ ...current, [item.id]: { ...current[item.id], open: false } }))}>Close translation</button>
+            </section>}
+          </div>
           {item.neighbours.filter(n => n.position === 'after').map(n =>
             <blockquote className="neighbour" key={n.id}>
               <small>Following passage · {n.label}</small>
               <p>{n.text}{n.truncated ? '…' : ''}</p>
             </blockquote>)}
           <button type="button" className="secondary" onClick={event => review(item, event)}>Review source</button>
+          {item.translation_available && <button type="button" className="secondary translation-button"
+            disabled={translations[item.id]?.loading} onClick={() => translate(item)}>Open translation</button>}
         </article>)}
+        </section>)}
         <form onSubmit={feedback} className="feedback">
-          <h3>Were these results helpful?</h3>
+          <h3>Was the whole response helpful?</h3>
           <div className="thumbs">
             <button type="button" aria-pressed={thumbs === 'up'} onClick={() => setThumbs(thumbs === 'up' ? null : 'up')}>👍 Thumbs up</button>
             <button type="button" aria-pressed={thumbs === 'down'} onClick={() => setThumbs(thumbs === 'down' ? null : 'down')}>👎 Thumbs down</button>
