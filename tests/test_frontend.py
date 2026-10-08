@@ -18,6 +18,11 @@ def test_screen_source_label():
               assert.equal(sourceLabel({{label, kind}}), `${{label}} · ${{kind}}`);
             assert.equal(sourceLabel({{label, kind: 'content'}}), label);
             assert.equal(sourceLabel({{label}}), label);
+            assert.equal(sourceLabel({{label, text_source: 'ocr'}}),
+              `${{label}} · from OCR`);
+            for (const metadata of [{{check_page: true}}, {{inherited_ocr: true}}])
+              assert.equal(sourceLabel({{label, ...metadata}}),
+                `${{label}} · from OCR — check the page`);
             """,
         ],
         check=True,

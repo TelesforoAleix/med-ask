@@ -1,4 +1,4 @@
-"""Extract original paragraphs without models, network access, or default writes.
+"""Extract source paragraphs with kept OCR, without network access or default writes.
 
 PDF positions are one-based inclusive ranges. Printed positions come exclusively
 from visible margin numbers and independently verified neighbours. PDF labels are
@@ -73,10 +73,16 @@ class Passage:
     inherited_ocr: bool = False
     metadata: dict[str, Any] = field(default_factory=dict)
     kind: str = field(init=False)
+    text_source: str = field(init=False)
+    check_page: bool = False
+    ocr_reasons: list[str] = field(default_factory=list)
 
     def __post_init__(self):
-        """1. Assign the passage kind from its nearest recognised section heading."""
+        """1. Assign the kind from its nearest recognised section heading.
+        2. Record whether the original text layer came from inherited OCR.
+        """
         self.kind = passage_kind(self.section_path)
+        self.text_source = "inherited-ocr" if self.inherited_ocr else "born-digital"
 
 
 @dataclass
@@ -1082,26 +1088,42 @@ def _positions(
     return (pages[0].printed_page, pages[-1].printed_page), None
 
 
-def extract_book(pdf_path: str | Path, book_id: str, language: str) -> Extraction:
+def extract_book(
+    pdf_path: str | Path, book_id: str, language: str, *, ocr_root: Path | None = None
+) -> Extraction:
     """1. Read positioned text, margin numbers, bookmarks, and diagnostic labels.
     2. Classify text provenance, verify numbering, and find repeated margins.
-    3. Remove margins and figure labels; assign sections and separate captions.
-    4. Reassemble OCR fragments and join paragraphs across columns and pages.
-    5. Assign kinds and join unfinished content sentences across body-free pages.
-    6. Return plain records in memory, including an account of every PDF page.
+    3. Substitute kept readings, separating captions, headings, and failed rules.
+    4. Remove margins and figure labels from PDF text; assign its sections.
+    5. Reassemble PDF fragments, preserving legacy boundaries without readings.
+    6. Assign kinds and join passing content sentences across body-free pages.
+    7. Return plain records in memory, including an account of every PDF page.
     """
+    from med_ask.ocr import (
+        ROOT,
+        failed_rules,
+        has_ink,
+        load_reading,
+        reading_candidates,
+    )
+
+    root = ROOT if ocr_root is None else ocr_root
     passages: list[Passage] = []
     captions: list[Caption] = []
     with pymupdf.open(pdf_path) as doc:
         if not doc.is_pdf:
             raise ValueError("Extraction requires a PDF")
         raw_pages, sources, page_images = [], [], []
+        page_texts, inks = [], []
         for page in doc:
             blocks = _read_blocks(page)
             images = page.get_image_info()
             raw_pages.append(blocks)
             sources.append(_classify(page, blocks, images))
             page_images.append(images)
+            text = page.get_text()
+            page_texts.append(text)
+            inks.append(has_ink(page) if len(text.strip()) < 40 else True)
         heights = [page.rect.height for page in doc]
         widths = [page.rect.width for page in doc]
         labels = [page.get_label() for page in doc]
@@ -1109,7 +1131,48 @@ def extract_book(pdf_path: str | Path, book_id: str, language: str) -> Extractio
     candidates = [
         _candidates(blocks, h) for blocks, h in zip(raw_pages, heights, strict=True)
     ]
+    readings = [load_reading(book_id, i + 1, root) for i in range(len(raw_pages))]
+    original_decisions = _printed_pages(candidates)
+    candidates = [
+        reading_candidates(r["text"]) if r else c
+        for r, c in zip(readings, candidates, strict=True)
+    ]
+    has_readings = any(readings)
     decisions = _printed_pages(candidates)
+    decisions = [
+        decision if decision[0] else original
+        for decision, original in zip(decisions, original_decisions, strict=True)
+    ]
+    page_failures = []
+    for i, reading in enumerate(readings):
+        if reading:
+            sources[i] = "ocr"
+            neighbours = [
+                (offset, candidates[i + offset])
+                for offset in (-2, -1, 1, 2)
+                if 0 <= i + offset < len(candidates)
+            ]
+            reading["rules_failed"] = failed_rules(
+                reading["text"],
+                language,
+                "ocr",
+                reading["ink"],
+                candidates[i],
+                neighbours,
+                reading["finish_reason"],
+            )
+        neighbours = [
+            (offset, candidates[i + offset])
+            for offset in (-2, -1, 1, 2)
+            if 0 <= i + offset < len(candidates)
+        ]
+        page_failures.append(
+            reading["rules_failed"]
+            if reading
+            else failed_rules(
+                page_texts[i], language, sources[i], inks[i], candidates[i], neighbours
+            )
+        )
     decisions = [
         (
             value,
@@ -1157,6 +1220,82 @@ def extract_book(pdf_path: str | Path, book_id: str, language: str) -> Extractio
             bookmark_path = bookmark_path[: level - 1] + [title]
             heading_path = []
             entry = next(entries, None)
+        if readings[index]:
+            reading = readings[index]
+            section = tuple(bookmark_path)
+            printed, reason = _positions(page_number, page_number, accounts)
+            text = "\n".join(
+                line
+                for line in reading["text"].splitlines()
+                if line.strip().casefold() != "copyrighted material"
+            )
+            edge_numbers = reading_candidates(text)
+            lines = text.splitlines()
+            nonempty = [i for i, line in enumerate(lines) if line.strip()]
+            for position in nonempty[:1] + nonempty[-1:]:
+                if _number(lines[position].strip()) in edge_numbers:
+                    lines[position] = ""
+            text = "\n".join(lines)
+            # Figure markers delimit captions even without a surrounding blank line.
+            text = re.sub(r"(?m)^(\[FIGURE [^\]]+\])", r"\n\n\1", text)
+            pending_caption = None
+            for paragraph in re.split(r"\n\s*\n", text.strip()):
+                paragraph = paragraph.strip()
+                if not paragraph:
+                    continue
+                if pending_caption is not None:
+                    pending_caption.text = paragraph
+                    pending_caption = None
+                    continue
+                figure = re.match(r"^\[FIGURE ([^\]]+)\]\s*(.*)", paragraph, re.S)
+                if figure:
+                    captions.append(
+                        Caption(
+                            book_id,
+                            language,
+                            figure[1],
+                            page_number,
+                            figure[2].strip(),
+                            {"text_source": "ocr"},
+                        )
+                    )
+                    if not figure[2].strip():
+                        pending_caption = captions[-1]
+                    continue
+                group = []
+                for line in paragraph.splitlines():
+                    if passage_kind((line,)) != "content":
+                        if group:
+                            _reading_passage(
+                                passages,
+                                book_id,
+                                language,
+                                page_number,
+                                printed,
+                                reason,
+                                section,
+                                group,
+                                reading,
+                            )
+                            group = []
+                        section = tuple(bookmark_path) + (line.strip(),)
+                    else:
+                        group.append(line)
+                if group:
+                    _reading_passage(
+                        passages,
+                        book_id,
+                        language,
+                        page_number,
+                        printed,
+                        reason,
+                        section,
+                        group,
+                        reading,
+                    )
+            accounts[index].has_text = bool(reading["text"].strip())
+            previous_last = None
+            continue
         if not toc:
             running_titles = []
             for raw in blocks:
@@ -1352,6 +1491,14 @@ def extract_book(pdf_path: str | Path, book_id: str, language: str) -> Extractio
                 and section == previous_section
                 and _continues(previous_last, block, column_left)
                 and not starts_definition
+                and (
+                    not has_readings
+                    or (
+                        sources[index] != "inherited-ocr"
+                        and not passages[-1].inherited_ocr
+                        and not passages[-1].check_page
+                    )
+                )
             ):
                 passage = passages[-1]
                 passage.text = _join_lines([passage.text, block.text])
@@ -1384,15 +1531,51 @@ def extract_book(pdf_path: str | Path, book_id: str, language: str) -> Extractio
             last_block = block
             previous_section = section
         previous_last = last_block
+    for passage in passages:
+        if has_readings and passage.text_source != "ocr":
+            passage.ocr_reasons = sorted(
+                {
+                    reason
+                    for page in range(passage.pdf_pages[0], passage.pdf_pages[1] + 1)
+                    for reason in page_failures[page - 1]
+                }
+            )
+            passage.check_page = bool(passage.ocr_reasons)
+        passage.text_source = (
+            "inherited-ocr" if passage.inherited_ocr else "born-digital"
+        )
+        if "ocr" in passage.metadata.get("page_text_sources", {}).values():
+            passage.text_source = "ocr"
     passages = join_page_passages(passages, accounts)
     return Extraction(book_id, language, passages, captions, accounts)
+
+
+def _reading_passage(
+    passages, book_id, language, page, printed, reason, section, lines, reading
+):
+    """1. Preserve a reading's paragraph as one passage with its source and failures."""
+    passage = Passage(
+        book_id,
+        language,
+        (page, page),
+        printed,
+        reason,
+        section,
+        len(passages) + 1,
+        " ".join(line.strip() for line in lines),
+        metadata={"page_text_sources": {page: "ocr"}},
+        check_page=bool(reading["rules_failed"]),
+        ocr_reasons=list(reading["rules_failed"]),
+    )
+    passage.text_source = "ocr"
+    passages.append(passage)
 
 
 def join_page_passages(
     passages: list[Passage], accounts: list[PageAccount]
 ) -> list[Passage]:
     """1. Compare consecutive passages across pages, skipping body-free pages.
-    2. Require the same book and section, content kinds, and no inherited OCR.
+    2. Require the same book and section, content kinds, and no unchecked OCR.
     3. Join unfinished sentences continued in lower case or with a hyphenated word.
     4. Extend PDF and verified printed ranges and preserve both source locations.
     5. Renumber the retained passages in reading order.
@@ -1411,6 +1594,8 @@ def join_page_passages(
             and previous.kind == current.kind == "content"
             and not previous.inherited_ocr
             and not current.inherited_ocr
+            and not previous.check_page
+            and not current.check_page
             and not END_SENTENCE.search(previous.text)
             and (current.text[:1].islower() or hyphenated)
         ):
@@ -1423,6 +1608,8 @@ def join_page_passages(
             previous.printed_pages, previous.printed_page_reason = _positions(
                 *previous.pdf_pages, accounts
             )
+            if current.text_source == "ocr":
+                previous.text_source = "ocr"
             previous.metadata.setdefault("locations", []).extend(
                 current.metadata.get("locations", [])
             )

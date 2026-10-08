@@ -95,6 +95,9 @@ def test_evidence_and_plain_embedding_text():
         score=0.73,
         neighbours=[],
         kind="content",
+        text_source="inherited-ocr",
+        check_page=False,
+        ocr_reasons=[],
     )
     from llama_index.core.schema import MetadataMode
 

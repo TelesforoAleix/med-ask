@@ -3,6 +3,7 @@
 import asyncio
 import hashlib
 import json
+import os
 import re
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
@@ -52,6 +53,9 @@ class Evidence:
     score: float | None
     neighbours: list[dict] = field(default_factory=list)
     kind: str = "content"
+    text_source: str = "born-digital"
+    check_page: bool = False
+    ocr_reasons: list[str] = field(default_factory=list)
 
 
 def model_table(model: str, roles=False, purpose="embed") -> str:
@@ -61,9 +65,10 @@ def model_table(model: str, roles=False, purpose="embed") -> str:
     """
     stem = re.sub(r"[^a-z0-9]+", "_", model.lower()).strip("_")[:32] or "model"
     digest = hashlib.sha256(model.encode()).hexdigest()[:16]
-    version = INDEX_VERSION + (
-        "r" if roles is True and purpose != "embed-large" else ""
-    )
+    version = os.environ.get("INDEX_VERSION", INDEX_VERSION)
+    if not re.fullmatch(r"v[0-9]{1,4}", version):
+        raise ValueError("INDEX_VERSION must be v followed by one to four digits")
+    version += "r" if roles is True and purpose != "embed-large" else ""
     return f"e_{version}_{stem}_{digest}"
 
 
@@ -179,6 +184,11 @@ def evidence_from_node(node, score=None, neighbours=None) -> Evidence:
         score=score,
         neighbours=neighbours or [],
         kind=m.get("kind", "content"),
+        text_source=m.get(
+            "text_source", "inherited-ocr" if m["inherited_ocr"] else "born-digital"
+        ),
+        check_page=m.get("check_page", False),
+        ocr_reasons=m.get("ocr_reasons", []),
     )
 
 
