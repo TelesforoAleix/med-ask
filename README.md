@@ -335,3 +335,62 @@ docker compose --profile ingest run --rm ingest export-questions
 The command creates a uniquely named JSON Lines file under `/data/originals/` and
 prints its path and byte size. It overwrites nothing. Only `app` and `ingest` mount
 originals; `public` has no access. No exports or ingests are scheduled.
+
+## Retrieval eval
+
+The eval set measures how often search returns the pages that hold the evidence,
+per embedding model, and how fast a question is embedded. It is private and lives
+outside git at `/data/originals/eval/med-ask-eval.v1.jsonl` in `ingest`
+(`/srv/homelab/med-ask-data/originals/eval/` on the server). Never copy it, print
+its questions, or put any part of it in tests or the repository. `EVAL_FILE`
+overrides the path and `EVAL_RUNS_DIR` the results directory.
+
+Map each manifest book to its eval book id with an optional `eval_book` key, as in
+`src/med_ask/books.example.toml`. Evidence for an eval book that no manifest entry
+names counts as not indexed.
+
+Run one embedding purpose against the eval set, using the app's own search:
+
+```sh
+docker compose --profile ingest run --rm ingest eval
+# Another indexed model, by naming its purpose:
+docker compose --profile ingest run --rm ingest eval --purpose <purpose>
+```
+
+`--purpose` defaults to `EMBEDDING_PURPOSE`. Only records with status `confirmed`
+are scored; `--status pages_open` (repeatable) adds others for diagnostics. The
+run never grades, generates or logs a question. It prints a short summary and
+writes `/data/originals/eval/runs/run-<UTC time>-<purpose>-<suffix>.json`, never
+overwriting. Both hold ids, scores, ranks, page numbers and timings only; no
+question text.
+
+What is scored:
+
+- A retrieved passage hits if any of its PDF pages is a confirmed page of that
+  eval book. A range counts every page in it, with no ±1 tolerance.
+- Only `confirmed` evidence on selected records counts. Pages with
+  `text: "missing"`, unconfirmed or `ocr_missing` evidence, and books not indexed
+  are left out. An answerable record with nothing scoreable is reported as skipped.
+- The gate is Hit@5 on answerable questions. Hit@10, work coverage@10 (for
+  questions with evidence in two or more works, the share of works with a top-10
+  hit; two editions of one work count once), and Hit@5 per language, type,
+  subject and book are diagnostics.
+- Embedding time is the median and slowest of the first 20 questions in file
+  order, after one warm-up request with fixed text.
+- Not-found questions stay out of the gate; their top similarity is reported
+  beside the answerable questions' top similarity.
+- Records with a wrong schema, an unknown status or evidence state, or a page
+  item that is neither `pdf` nor a `pdf_from`/`pdf_to` range are reported by id
+  and skipped. Retired records are not run.
+
+Compare a baseline run with a candidate run. Bare file names are looked up in the
+runs directory:
+
+```sh
+docker compose --profile ingest run --rm ingest eval --compare <baseline.json> <candidate.json>
+```
+
+The candidate passes only if total Hit@5 does not drop and no question that hit
+before is lost unless another question gains. The command names lost and gained
+questions and exits 0 on pass, 1 on fail, and 2 when it refuses, for example when
+the runs used different `set_version`s.

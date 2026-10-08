@@ -1,9 +1,11 @@
 # Invented catalogue; copy its format into /data/sources/books.toml outside git.
+# The optional eval_book names the same book in the private eval set.
 [[books]]
 id = "sample-biology"
 filename = "Example - Biology.pdf"
 title = "Example - Biology"
 language = "English"
+eval_book = "sample-biology-2-en"
 
 [[books]]
 id = "sample-chemistry"
