@@ -71,7 +71,7 @@ and Tailscale, and wants and follows `homelab.service`, which creates the extern
 `homelab-models` network. It does not start the target or unlock the volume. Failures appear
 in `systemctl status med-ask.service`; there is no failure notifier configured.
 
-All med-ask files live on that volume except the installed systemd unit:
+All med-ask files live on that volume except the installed systemd units:
 
 | Host path | Purpose | Container path |
 | --- | --- | --- |
@@ -166,6 +166,44 @@ sudo systemctl daemon-reload
 sudo systemctl enable med-ask.service
 sudo systemctl start med-ask.service
 systemctl status med-ask.service
+```
+
+Install the daily question-log export separately, while the volume is mounted
+and `med-ask.service` is active. This installation does not restart the app or
+build images:
+
+```sh
+sudo git -C /srv/homelab/med-ask pull --ff-only
+sudo systemd-analyze verify /srv/homelab/med-ask/deploy/med-ask-export.service /srv/homelab/med-ask/deploy/med-ask-export.timer
+sudo install -o root -g root -m 0644 /srv/homelab/med-ask/deploy/med-ask-export.service /srv/homelab/med-ask/deploy/med-ask-export.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now med-ask-export.timer
+sudo systemctl start med-ask-export.service
+systemctl list-timers med-ask-export.timer
+systemctl status med-ask-export.service
+sudo journalctl -u med-ask-export.service
+sudo stat -c '%a %u:%g %s bytes' /srv/homelab/med-ask-data/originals/questions.jsonl
+sudo wc -l /srv/homelab/med-ask-data/originals/questions.jsonl
+sudo docker compose -f /srv/homelab/med-ask/compose.yaml exec -T postgres psql -U medask -d medask -Atc 'SELECT count(*) FROM medask_questions'
+```
+
+The timer runs at 03:00 server-local time daily. `Persistent=true` catches up
+after downtime; a locked volume or inactive app skips the export. Check status
+and the journal for skips or failures; no failure notifier is configured. The
+service uses the existing image, with the clone's `src` mounted read-only and
+`PYTHONPATH` selecting that code, so a pull updates export behaviour without a
+build. `--no-deps --pull never` prevents it starting dependencies or pulling an
+image. Files are owned by UID/GID 10001 with mode 0600. Compare only row counts
+and byte sizes; do not print question rows. Start the export service again to
+check that the same path is replaced and the count still matches the table.
+
+To roll back scheduling, leave the exports in place and remove only the two
+new installed units:
+
+```sh
+sudo systemctl disable --now med-ask-export.timer
+sudo rm /etc/systemd/system/med-ask-export.timer /etc/systemd/system/med-ask-export.service
+sudo systemctl daemon-reload
 ```
 
 Each start attempts an anonymous, fast-forward-only pull of `main`, then builds
@@ -408,9 +446,19 @@ Export the whole question log by hand:
 docker compose --profile ingest run --rm ingest export-questions
 ```
 
-The command creates a uniquely named JSON Lines file under `/data/originals/` and
-prints its path and byte size. It overwrites nothing. Only `app` and `ingest` mount
-originals; `public` has no access. No exports or ingests are scheduled.
+The command writes `/data/originals/questions.jsonl` on every run, printing its
+path and byte size. It streams one `row_to_json` question row per line in
+`asked_at` order, excluding the translation cache. It writes a temporary file
+in the same directory, then atomically replaces the previous export. An equal
+or larger row count replaces it; a smaller count prints a refusal and exits
+non-zero, keeping the previous file byte-identical and removing the temporary
+file. With no previous file, even an empty export is written. An interrupted
+write preserves the previous export; an abrupt process kill may leave a
+temporary file but cannot publish a partial export. Existing uniquely named
+exports stay in place. Only `app` and `ingest` mount originals; `public` has no
+access. The server timer above schedules exports; ingestion remains manual.
+Until the image is next rebuilt, use `sudo systemctl start med-ask-export.service`
+on the server to run the updated command from the clone.
 
 ## Retrieval eval
 

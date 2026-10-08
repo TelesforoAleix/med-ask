@@ -1,7 +1,9 @@
 """Application-owned index bookkeeping and question log; no SQL retrieval."""
 
 import json
+import os
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 from uuid import uuid4
 
 import psycopg
@@ -158,13 +160,45 @@ class Database:
         return row is not None
 
     def export(self, directory: Path) -> Path:
+        """1. Stream question rows in time order into a temporary file beside the log.
+        2. Count the existing export's lines without loading its large rows into memory.
+        3. Refuse fewer rows, or atomically replace questions.jsonl with the full file.
+        4. Remove the temporary file on failure, leaving the previous export intact.
+        """
         directory = directory.resolve()
-        path = directory / f"questions-{uuid4()}.jsonl"
-        with self.connect() as db, db.cursor(name="question_export") as cursor:
-            cursor.execute(
-                "SELECT row_to_json(q) FROM medask_questions q ORDER BY asked_at"
-            )
-            with path.open("x", encoding="utf-8") as file:
-                for (row,) in cursor:
-                    file.write(json.dumps(row, ensure_ascii=False) + "\n")
+        path = directory / "questions.jsonl"
+        temporary = None
+        try:
+            with NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=directory,
+                prefix=".questions-",
+                suffix=".tmp",
+                delete=False,
+            ) as file:
+                temporary = Path(file.name)
+                count = 0
+                with self.connect() as db, db.cursor(name="question_export") as cursor:
+                    cursor.execute(
+                        "SELECT row_to_json(q) FROM medask_questions q "
+                        "ORDER BY asked_at"
+                    )
+                    for (row,) in cursor:
+                        file.write(json.dumps(row, ensure_ascii=False) + "\n")
+                        count += 1
+                file.flush()
+                os.fsync(file.fileno())
+            if path.exists():
+                with path.open("rb") as previous:
+                    old_count = sum(1 for _ in previous)
+                if count < old_count:
+                    raise ValueError(
+                        f"Refusing question export: {count} rows is fewer than "
+                        f"the existing {old_count}; {path} left untouched"
+                    )
+            temporary.replace(path)
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
         return path
