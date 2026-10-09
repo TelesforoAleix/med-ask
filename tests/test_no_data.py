@@ -6,6 +6,7 @@ import pytest
 
 from scripts.check_no_data import (
     DATA_EXTENSIONS,
+    DIAGRAM_PATHS,
     JSON_CONFIG_PATHS,
     MAX_BYTES,
     SIGNATURES,
@@ -18,6 +19,33 @@ def test_rejects_every_data_extension(tmp_path, extension):
     name = f"fixture{extension}"
     (tmp_path / name).write_bytes(b"synthetic content")
     assert name in check_paths(tmp_path, [name])[0]
+
+
+@pytest.mark.parametrize("name", sorted(DIAGRAM_PATHS))
+def test_accepts_only_allowed_diagram_paths(tmp_path, name):
+    path = tmp_path / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text('<svg xmlns="http://www.w3.org/2000/svg"/>')
+    assert check_paths(tmp_path, [name]) == []
+
+
+@pytest.mark.parametrize(
+    "name", ["other.svg", "docs/diagrams/other.svg", "docs/architecture-light.svg"]
+)
+def test_rejects_unlisted_svg_paths(tmp_path, name):
+    path = tmp_path / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text('<svg xmlns="http://www.w3.org/2000/svg"/>')
+    assert "data extension" in check_paths(tmp_path, [name])[0]
+
+
+@pytest.mark.parametrize("name", sorted(DIAGRAM_PATHS))
+@pytest.mark.parametrize("content", [b"x" * (MAX_BYTES + 1), SIGNATURES[0]])
+def test_allowed_diagrams_still_check_size_and_signature(tmp_path, name, content):
+    path = tmp_path / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(content)
+    assert check_paths(tmp_path, [name])
 
 
 @pytest.mark.parametrize("signature", SIGNATURES)

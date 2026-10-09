@@ -13,17 +13,9 @@ The repository holds code only; passages, vectors and logs stay outside it, enfo
 
 ## Architecture
 
-```mermaid
-flowchart LR
-    pdfs["Textbook PDFs outside git"] --> ingest["Ingest extract + OCR"]
-    ingest --> passages["Passages"] --> index["LlamaIndex index"]
-    index --> db["Postgres + pgvector"]
-    browser["Browser"] --> app["Flask app<br>Tailnet or public behind Cloudflare Access"]
-    app --> retrieval["LlamaIndex retrieval"] --> db
-    app --> models["HomeLab model endpoint"]
-    ingest --> models
-    app --> answer["Generated answer shown apart from sources"]
-```
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/diagrams/architecture-dark.svg"><img alt="med-ask architecture: built evidence search, generated answers and PDF ingestion through Postgres and HomeLab; planned page repair, Mac OCR and figure descriptions." src="docs/diagrams/architecture-light.svg"></picture>
+
+Solid parts are built; dashed parts are planned.
 
 - Flask + Gunicorn serves the React 19 + Vite interface and API.
 - PyMuPDF extracts pages; LlamaIndex owns indexing and retrieval in Postgres + pgvector.
