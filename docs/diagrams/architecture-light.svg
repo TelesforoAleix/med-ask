@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg viewBox="0 0 1280 720" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="architecture-title architecture-desc" id="architecture-root">
+        <title id="architecture-title">med-ask architecture</title>
+        <desc id="architecture-desc">A student uses the built app to find evidence and generated answers through Postgres and HomeLab, with planned page repair, Mac OCR and figure descriptions.</desc>
+        <defs>
+      <style>@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&amp;family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@400;500;600&amp;family=Noto+Serif:ital@0;1&amp;family=Noto+Sans+KR:wght@400;500;600&amp;family=Noto+Serif+KR:wght@400&amp;family=Noto+Sans+TC:wght@400;500;600&amp;family=Noto+Serif+TC:wght@400&amp;display=swap');
+      #architecture-root { color: #171717; font-family: "Geist", "Helvetica Neue", Helvetica, Arial, sans-serif; }
+      #architecture-root .diagram-container { width: 100%; overflow-x: auto; }
+      #architecture-root text { fill: #171717; font-family: "Geist", "Helvetica Neue", Helvetica, Arial, sans-serif; }
+      #architecture-root .heading { font-size: 28px; font-weight: 500; }
+      #architecture-root .group { font-size: 14px; font-weight: 600; }
+      #architecture-root .name { font-size: 12px; font-weight: 600; }
+      #architecture-root .detail { font-size: 9px; font-weight: 400; fill: #656560; }
+      #architecture-root .mono { font-size: 9px; font-family: "Geist Mono", "IBM Plex Mono", "SFMono-Regular", Consolas, monospace; fill: #656560; }
+      #architecture-root .tag { font-size: 8px; font-weight: 500; letter-spacing: 0.14em; font-family: "Geist Mono", "IBM Plex Mono", "SFMono-Regular", Consolas, monospace; fill: #656560; }
+      #architecture-root .diagram-container { overflow-x: visible; }</style>
+          <marker id="architecture-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#656560"/></marker>
+        </defs>
+        <rect width="1280" height="720" fill="#f2f2ef"/>
+<text x="40" y="56" class="heading">med-ask architecture</text>
+<rect x="280" y="100" width="600" height="244" rx="8" fill="#171717" fill-opacity="0.02" stroke="#cdcdc7"/>
+<text x="304" y="128" class="tag">APP · BUILT</text>
+<text x="304" y="152" class="group">Flask + React</text>
+<text x="304" y="176" class="detail">Public behind Cloudflare Access · private routes on the tailnet only</text>
+<rect x="40" y="408" width="840" height="160" rx="8" fill="#171717" fill-opacity="0.02" stroke="#cdcdc7"/>
+<text x="64" y="436" class="tag">INGEST · BUILT CORE + PLANNED STEPS</text>
+<path d="M 240,136 H 280" fill="none" stroke="#171717" marker-end="url(#architecture-arrow)"/>
+<path d="M 384,192 V 236" fill="none" stroke="#656560" marker-end="url(#architecture-arrow)"/>
+<path d="M 384,308 V 356 Q 384,364 392,364 H 1032 Q 1040,364 1040,372 V 380" fill="none" stroke="#656560" marker-end="url(#architecture-arrow)"/>
+<path d="M 880,164 H 912 Q 920,164 920,172 V 536 Q 920,544 928,544 H 944" fill="none" stroke="#171717" marker-end="url(#architecture-arrow)"/>
+<path d="M 880,448 H 944" fill="none" stroke="#656560" marker-end="url(#architecture-arrow)"/>
+<path d="M 880,528 H 896 Q 904,528 904,536 V 576 Q 904,584 912,584 H 944" fill="none" stroke="#171717" marker-end="url(#architecture-arrow)"/>
+<g data-node="Student in a browser" data-state="built">
+<rect x="40" y="100" width="200" height="72" rx="6" fill="#f2f2ef" stroke="#171717" stroke-width="1"/>
+<text x="56" y="124" class="name">Student in a browser</text>
+<text x="56" y="144" class="detail">Uses the app</text>
+</g>
+<g data-node="Evidence search" data-state="built">
+<rect x="304" y="236" width="164" height="72" rx="6" fill="#e8e8e3" stroke="#ff4d00" stroke-width="1.2"/>
+<text x="320" y="260" class="name">Evidence search</text>
+<text x="320" y="280" class="detail">Passages · book and page</text>
+<text x="320" y="296" class="mono">LlamaIndex</text>
+</g>
+<g data-node="Grading + short answer" data-state="built">
+<rect x="492" y="236" width="168" height="72" rx="6" fill="#f2f2ef" stroke="#171717" stroke-width="1"/>
+<text x="508" y="260" class="name">Grading + short answer</text>
+<text x="508" y="280" class="detail">Labelled as generated</text>
+<text x="508" y="296" class="detail">Apart from the sources</text>
+</g>
+<g data-node="Resolve issues" data-state="planned">
+<rect x="684" y="236" width="172" height="72" rx="6" fill="#f2f2ef" stroke="#171717" stroke-width="1" stroke-dasharray="4,3"/>
+<text x="700" y="260" class="name">Resolve issues</text>
+<text x="700" y="280" class="detail">Fix failed pages on screen</text>
+<text x="700" y="296" class="detail">Re-index</text>
+<rect x="776" y="216" width="64" height="16" rx="2" fill="#f2f2ef" stroke="#cdcdc7"/>
+<text x="784" y="228" class="tag">PLANNED</text>
+</g>
+<g data-node="PDF text extraction" data-state="built">
+<rect x="64" y="456" width="240" height="88" rx="6" fill="#f2f2ef" stroke="#171717" stroke-width="1"/>
+<text x="80" y="480" class="name">PDF text extraction</text>
+<text x="80" y="500" class="detail">Paragraphs with PDF and</text>
+<text x="80" y="516" class="detail">printed page numbers</text>
+<text x="80" y="532" class="mono">PyMuPDF · LlamaIndex</text>
+</g>
+<g data-node="OCR on the Mac" data-state="planned">
+<rect x="328" y="456" width="160" height="88" rx="6" fill="#f2f2ef" stroke="#171717" stroke-width="1" stroke-dasharray="4,3"/>
+<text x="344" y="480" class="name">OCR on the Mac</text>
+<rect x="408" y="436" width="64" height="16" rx="2" fill="#f2f2ef" stroke="#cdcdc7"/>
+<text x="416" y="448" class="tag">PLANNED</text>
+</g>
+<g data-node="Figures with their pages" data-state="planned">
+<rect x="512" y="456" width="344" height="88" rx="6" fill="#f2f2ef" stroke="#171717" stroke-width="1" stroke-dasharray="4,3"/>
+<text x="528" y="480" class="name">Figures with their pages</text>
+<text x="528" y="500" class="detail">Described by local vision</text>
+<text x="528" y="532" class="mono">vision</text>
+<rect x="776" y="436" width="64" height="16" rx="2" fill="#f2f2ef" stroke="#cdcdc7"/>
+<text x="784" y="448" class="tag">PLANNED</text>
+</g>
+<g data-node="Postgres + pgvector" data-state="built">
+<rect x="944" y="380" width="296" height="88" rx="6" fill="#f2f2ef" stroke="#171717" stroke-width="1"/>
+<text x="960" y="404" class="name">Postgres + pgvector</text>
+<text x="960" y="424" class="detail">Passages and embeddings</text>
+<text x="960" y="456" class="mono">pgvector</text>
+</g>
+<g data-node="HomeLab model endpoint" data-state="built">
+<rect x="944" y="512" width="296" height="104" rx="6" fill="#f2f2ef" stroke="#171717" stroke-width="1"/>
+<text x="960" y="536" class="name">HomeLab model endpoint</text>
+<text x="960" y="556" class="detail">Embeddings · grading · answers · vision</text>
+<text x="960" y="604" class="mono">OpenAI-compatible · purpose-based</text>
+<text x="1160" y="536" class="tag">EXTERNAL</text>
+</g>
+<line x1="40" y1="652" x2="1240" y2="652" stroke="#cdcdc7"/>
+<rect x="40" y="672" width="24" height="16" rx="2" fill="#f2f2ef" stroke="#171717"/>
+<text x="76" y="684" class="detail">Built</text>
+<rect x="160" y="672" width="24" height="16" rx="2" fill="#f2f2ef" stroke="#171717" stroke-dasharray="4,3"/>
+<text x="196" y="684" class="detail">Planned · PLANNED tag</text>
+      </svg>

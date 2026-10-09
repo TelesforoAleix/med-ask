@@ -21,6 +21,13 @@ JSON_CONFIG_PATHS = frozenset(
         "frontend/tsconfig.node.json",
     }
 )
+# Exact diagram paths only; never allow entire directories or glob patterns.
+DIAGRAM_PATHS = frozenset(
+    {
+        "docs/diagrams/architecture-light.svg",
+        "docs/diagrams/architecture-dark.svg",
+    }
+)
 SIGNATURES = (b"%PDF", b"\x89PNG\r\n\x1a\n", b"\xff\xd8\xff", b"GIF87a", b"GIF89a")
 
 
@@ -30,7 +37,7 @@ def check_paths(root: Path, paths: list[str]) -> list[str]:
         path = root / name
         reasons = []
         suffix = path.suffix.lower()
-        if suffix in DATA_EXTENSIONS:
+        if suffix in DATA_EXTENSIONS and name not in DIAGRAM_PATHS:
             reasons.append("data extension")
         if suffix == ".json" and name not in JSON_CONFIG_PATHS:
             reasons.append("JSON path is not an allowed configuration")
