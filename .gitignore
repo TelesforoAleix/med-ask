@@ -9,6 +9,9 @@ Sources/
 *.tiff
 *.bmp
 *.svg
+# Exact diagram paths only (see DIAGRAM_PATHS in scripts/check_no_data.py)
+!docs/diagrams/architecture-light.svg
+!docs/diagrams/architecture-dark.svg
 *.ico
 *.heic
 .env
