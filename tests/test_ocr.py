@@ -162,6 +162,27 @@ def test_reading_roman_numbers_and_sequence(number):
     assert not ocr.reading_candidates("IIII\n" + "word " * 20)
 
 
+@pytest.mark.parametrize("edge", ["vi Synthetic header", "Synthetic header VI"])
+def test_roman_number_beside_header_is_read_and_header_preserved(book, tmp_path, edge):
+    root = tmp_path / "ocr"
+    text = (
+        edge + "\n\n" + "Synthetic source paragraph, sufficiently long for the rules.\n"
+        "Copyrighted material"
+    )
+    kept(root, book, 1, text)
+    kept(root, book, 2, "vii\n\nAnother synthetic source paragraph finishes here.")
+    assert ocr.reading_candidates(text) == {
+        ("roman", 6): "VI" if edge.endswith("VI") else "vi"
+    }
+    result = extract_book(book.path, book.id, book.language, ocr_root=root)
+    assert result.pages[0].printed_page == ("VI" if edge.endswith("VI") else "vi")
+    assert result.pages[0].printed_page_method == "read"
+    assert not result.passages[0].check_page
+    assert result.passages[0].text.startswith("Synthetic header")
+    assert not result.passages[0].text.startswith("vi ")
+    assert "header VI" not in result.passages[0].text
+
+
 def test_recheck_finalizes_partial_and_preserves_historical_attempts(book, tmp_path):
     root = tmp_path / "ocr"
     record = kept(
