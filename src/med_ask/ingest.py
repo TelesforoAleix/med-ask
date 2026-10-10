@@ -16,7 +16,7 @@ from med_ask.evaluation import (
     run_eval,
 )
 from med_ask.manifest import load_manifest
-from med_ask.ocr import VisionEndpoint, queue_summary, read_book
+from med_ask.ocr import VisionEndpoint, queue_summary, read_book, recheck_book
 from med_ask.retrieval import ingest_book, ingest_status, search
 
 DEFAULT_EVAL_FILE = "/data/originals/eval/med-ask-eval.v1.jsonl"
@@ -74,6 +74,9 @@ def main():
     commands.add_parser(
         "ocr-queue", help="List failing pages without model calls"
     ).add_argument("books", nargs="*")
+    commands.add_parser(
+        "ocr-recheck", help="Recheck saved readings without model calls"
+    ).add_argument("books", nargs="*")
     evaluation = commands.add_parser("eval")
     evaluation.add_argument(
         "--purpose", help="Embedding purpose to evaluate (default EMBEDDING_PURPOSE)"
@@ -99,7 +102,7 @@ def main():
     if args.command == "ocr" and args.limit is not None and args.limit < 1:
         parser.error("--limit must be positive")
     database = None
-    if args.command not in {"ocr", "ocr-queue"}:
+    if args.command not in {"ocr", "ocr-queue", "ocr-recheck"}:
         database = Database(os.environ["DATABASE_URL"])
         database.ensure()
     if args.command == "export-questions":
@@ -121,6 +124,10 @@ def main():
                 raise SystemExit(3)
         rows = [queue_summary(book) for book in selected]
     elif args.command == "ocr-queue":
+        rows = [queue_summary(book) for book in selected]
+    elif args.command == "ocr-recheck":
+        for book in selected:
+            recheck_book(book)
         rows = [queue_summary(book) for book in selected]
     elif args.command == "status":
         rows = ingest_status(selected, database)

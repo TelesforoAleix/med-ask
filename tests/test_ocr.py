@@ -110,6 +110,107 @@ def test_nonwords_allow_accents_numbers_and_scientific_shapes():
     assert ocr.nonword_share("%%% zzz x@x") == (1, 3)
 
 
+@pytest.mark.parametrize(
+    "text,finish,reason",
+    [
+        (
+            "A complete synthetic paragraph without a printed number.",
+            "stop",
+            "number-missing",
+        ),
+        ("99\n" + "word " * 20, "stop", "number-order"),
+        ("10\n" + "word " * 250, "stop", "language"),
+        ("10\n" + "word " * 20, "length", "token-limit"),
+    ],
+)
+def test_number_language_and_limit_failures_do_not_retry(
+    book, tmp_path, monkeypatch, text, finish, reason
+):
+    monkeypatch.setattr(ocr, "detect_language", lambda text: "es")
+    root = tmp_path / "ocr"
+    if reason == "number-order":
+        kept(root, book, 2, "11\n" + "word " * 20)
+    fake = endpoint(reply(text, finish))
+    assert ocr.read_book(book, fake, root, limit=1, output=lambda *a, **k: None)
+    record = ocr.load_reading(book.id, 1, root)
+    assert fake.read.call_count == 1 and record["complete"]
+    assert reason in record["rules_failed"]
+
+
+def test_nonwords_trigger_rotation(book, tmp_path):
+    root = tmp_path / "ocr"
+    fake = endpoint(reply("10\n" + "xzz% " * 50), reply())
+    assert ocr.read_book(book, fake, root, limit=1, output=lambda *a, **k: None)
+    record = ocr.load_reading(book.id, 1, root)
+    assert fake.read.call_count == 2 and record["rotated"]
+    assert record["readings"][0]["rules_failed"] == ["nonwords"]
+
+
+@pytest.mark.parametrize("number", ["i", "ii", "vi", "IV", "IX", "XIV"])
+def test_reading_roman_numbers_and_sequence(number):
+    candidates = ocr.reading_candidates(
+        number + "\n" + "word " * 20 + "\nCopyrighted material"
+    )
+    ((kind, value),) = candidates
+    assert kind == "roman"
+    text = number + "\n" + "word " * 20
+    assert rules(text, neighbours=[(-1, {("roman", value - 1): "previous"})]) == []
+    assert "number-order" in rules(
+        text, neighbours=[(-1, {("roman", value + 1): "next"})]
+    )
+    assert ocr.reading_candidates("word " * 20 + "\n" + number) == candidates
+    assert not ocr.reading_candidates("IIII\n" + "word " * 20)
+
+
+def test_recheck_finalizes_partial_and_preserves_historical_attempts(book, tmp_path):
+    root = tmp_path / "ocr"
+    record = kept(
+        root,
+        book,
+        1,
+        "vi\n" + "word " * 20 + "\nCopyrighted material",
+        rules_failed=["number-missing"],
+    )
+    record["complete"] = False
+    ocr.save_reading(book.id, 1, record, root)
+    historical = record["readings"].copy()
+    historical.append(
+        {
+            **historical[0],
+            "rotated": True,
+            "finish_reason": "length",
+            "rules_failed": ["token-limit"],
+        }
+    )
+    record["readings"] = historical
+    ocr.save_reading(book.id, 1, record, root)
+    ocr.recheck_book(book, root)
+    updated = ocr.load_reading(book.id, 1, root)
+    assert updated["complete"] and updated["rules_failed"] == []
+    assert updated["text"] == record["text"] and updated["readings"] == historical
+    fake = endpoint()
+    kept(root, book, 2, "vii\n" + "word " * 20)
+    kept(root, book, 3, "viii\n" + "word " * 20)
+    assert ocr.read_book(book, fake, root, output=lambda *a, **k: None)
+    fake.read.assert_not_called()
+
+
+def test_stryer_watermark_is_exact_and_saved_reading_stays_untouched(book, tmp_path):
+    root = tmp_path / "ocr"
+    text = (
+        "vi\n\nSynthetic source paragraph.\nCopyrighted material\n\n"
+        + "copyrighted material is ordinary synthetic prose.\nCopyrighted material"
+    )
+    stryer = Book("stryer", book.filename, book.title, book.language, book.path)
+    kept(root, stryer, 1, text)
+    path = root / "stryer" / "1.json"
+    before = path.read_bytes()
+    result = extract_book(book.path, "stryer", book.language, ocr_root=root)
+    assert all("Copyrighted material" not in p.text for p in result.passages)
+    assert any("copyrighted material is ordinary" in p.text for p in result.passages)
+    assert path.read_bytes() == before
+
+
 def test_ink_generated_pages():
     with pymupdf.open() as doc:
         page = doc.new_page(width=120, height=160)
@@ -123,8 +224,8 @@ def test_ink_generated_pages():
 @pytest.mark.parametrize("better", [False, True])
 def test_rotation_better_choice_tie_and_resume(book, tmp_path, better):
     root = tmp_path / "ocr"
-    upright = reply("Synthetic incomplete text without a margin number.")
-    rotated = reply() if better else reply("Another incomplete text without a number.")
+    upright = reply("Synthetic short reading.")
+    rotated = reply() if better else reply("Another short reading.")
     fake = endpoint(upright, rotated)
     assert ocr.read_book(book, fake, root, limit=1, output=lambda *a, **k: None)
     record = ocr.load_reading(book.id, 1, root)
@@ -212,7 +313,7 @@ def test_stop_without_marking_page_and_resume_pending_retry(book, tmp_path):
     assert "vision is not serving" in output.call_args.args[0]
     assert not ocr.read_book(
         book,
-        endpoint(reply("Synthetic failed reading without a number."), unavailable),
+        endpoint(reply("Synthetic short reading."), unavailable),
         root,
         output=output,
     )
@@ -323,6 +424,12 @@ def test_ocr_cli_queue_and_resume_without_database(book, tmp_path, monkeypatch, 
     monkeypatch.setattr("sys.argv", ["ingest", "ocr-queue"])
     ingest.main()
     assert json.loads(capsys.readouterr().out)[0]["queued"] == 3
+    recheck = MagicMock()
+    monkeypatch.setattr(ingest, "recheck_book", recheck)
+    monkeypatch.setattr("sys.argv", ["ingest", "ocr-recheck", book.id])
+    ingest.main()
+    recheck.assert_called_once_with(book)
+    assert json.loads(capsys.readouterr().out)[0]["queued"] == 3
     read = MagicMock(return_value=False)
     monkeypatch.setattr(ingest, "VisionEndpoint", MagicMock())
     monkeypatch.setattr(ingest, "read_book", read)
@@ -392,7 +499,7 @@ def test_reported_model_and_token_limit_are_kept(book, tmp_path, monkeypatch):
     assert record["model"] == "synthetic-reported"
     assert record["finish_reason"] == "length"
     assert record["rules_failed"] == ["token-limit"]
-    assert len(calls) == len(record["readings"]) == 2
+    assert len(calls) == len(record["readings"]) == 1
     assert not record["rotated"]  # upright wins the tie
 
 

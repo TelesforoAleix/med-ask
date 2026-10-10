@@ -1113,6 +1113,7 @@ def extract_book(
         has_ink,
         load_reading,
         reading_candidates,
+        reading_lines,
     )
 
     root = ROOT if ocr_root is None else ocr_root
@@ -1249,11 +1250,7 @@ def extract_book(
             reading = readings[index]
             section = tuple(bookmark_path)
             printed, reason = _positions(page_number, page_number, accounts)
-            text = "\n".join(
-                line
-                for line in reading["text"].splitlines()
-                if line.strip().casefold() != "copyrighted material"
-            )
+            text = "\n".join(reading_lines(reading["text"]))
             edge_numbers = reading_candidates(text)
             lines = text.splitlines()
             nonempty = [i for i, line in enumerate(lines) if line.strip()]
