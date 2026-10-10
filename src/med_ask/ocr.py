@@ -108,9 +108,22 @@ def reading_candidates(text):
     2. Accept whole decimal or Roman numbers in either case for sequence checks.
     """
     lines = [line.strip() for line in reading_lines(text) if line.strip()]
-    return {
-        parsed: line for line in (lines[:1] + lines[-1:]) if (parsed := _number(line))
-    }
+    numbers = [reading_number(line) for line in lines[:1] + lines[-1:]]
+    return {parsed: token for parsed, token, _ in numbers if parsed}
+
+
+def reading_number(line):
+    """1. Accept a whole printed number, preserving its original spelling.
+    2. Accept a Roman numeral beside an edge header and preserve that header.
+    3. Return the number, its spelling and remaining source text separately.
+    """
+    line = line.strip()
+    if parsed := _number(line):
+        return parsed, line, ""
+    for parts in (line.split(maxsplit=1), list(reversed(line.rsplit(maxsplit=1)))):
+        if len(parts) == 2 and (parsed := _number(parts[0])) and parsed[0] == "roman":
+            return parsed, parts[0], parts[1]
+    return None, "", line
 
 
 def nonword_share(text):

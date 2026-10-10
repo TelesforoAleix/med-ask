@@ -1114,6 +1114,7 @@ def extract_book(
         load_reading,
         reading_candidates,
         reading_lines,
+        reading_number,
     )
 
     root = ROOT if ocr_root is None else ocr_root
@@ -1255,8 +1256,9 @@ def extract_book(
             lines = text.splitlines()
             nonempty = [i for i, line in enumerate(lines) if line.strip()]
             for position in nonempty[:1] + nonempty[-1:]:
-                if _number(lines[position].strip()) in edge_numbers:
-                    lines[position] = ""
+                number, _, remainder = reading_number(lines[position])
+                if number in edge_numbers:
+                    lines[position] = remainder
             text = "\n".join(lines)
             # Figure markers delimit captions even without a surrounding blank line.
             text = re.sub(r"(?m)^(\[FIGURE [^\]]+\])", r"\n\n\1", text)
