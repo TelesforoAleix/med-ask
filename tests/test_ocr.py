@@ -183,6 +183,66 @@ def test_roman_number_beside_header_is_read_and_header_preserved(book, tmp_path,
     assert "header VI" not in result.passages[0].text
 
 
+@pytest.mark.parametrize("edge", ["22 Synthetic header", "Synthetic header 22"])
+def test_inline_integer_requires_neighbour_sequence(book, tmp_path, edge):
+    root = tmp_path / "ocr"
+    text = edge + "\n\nA synthetic source paragraph finishes here."
+    kept(root, book, 1, text, rules_failed=["number-missing"])
+    kept(root, book, 2, "23\n\nAnother synthetic source paragraph finishes here.")
+    assert rules(text, neighbours=[(1, {("arabic", 23): "23"})]) == []
+    assert "number-missing" in rules(text)
+    assert "number-missing" in rules(text, neighbours=[(1, {("arabic", 99): "99"})])
+    before = ocr.load_reading(book.id, 1, root)
+    ocr.recheck_book(book, root)
+    after = ocr.load_reading(book.id, 1, root)
+    assert after["rules_failed"] == []
+    assert after["text"] == before["text"]
+    assert after["readings"] == before["readings"]
+    result = extract_book(book.path, book.id, book.language, ocr_root=root)
+    assert result.pages[0].printed_page == "22"
+    assert not result.passages[0].check_page
+    assert result.passages[0].text.startswith("Synthetic header")
+    assert "header 22" not in result.passages[0].text
+
+
+@pytest.mark.parametrize("edge", ["1.2 Synthetic header", "Synthetic header 1.2"])
+def test_decimal_edge_token_is_not_a_printed_number(edge):
+    text = edge + "\n\nA synthetic source paragraph finishes here."
+    assert ocr.reading_candidates(text) == {}
+    assert "number-missing" in rules(text, neighbours=[(1, {("arabic", 2): "2"})])
+
+
+def test_inline_unsupported_integer_stays_in_source_text(book, tmp_path):
+    root = tmp_path / "ocr"
+    text = "1 Synthetic header\n\nA synthetic source paragraph finishes here."
+    kept(root, book, 1, text)
+    kept(root, book, 2, "23\n\nAnother synthetic source paragraph finishes here.")
+    result = extract_book(book.path, book.id, book.language, ocr_root=root)
+    assert result.passages[0].check_page
+    assert result.passages[0].text.startswith("1 Synthetic header")
+
+
+def test_watermark_words_leave_number_and_saved_reading_untouched(book, tmp_path):
+    root = tmp_path / "ocr"
+    text = (
+        "Synthetic header\n\nA synthetic source paragraph finishes here.\n"
+        "Copyrighted material 22"
+    )
+    kept(root, book, 1, text)
+    kept(root, book, 2, "23\n\nAnother synthetic source paragraph finishes here.")
+    before = (root / book.id / "1.json").read_bytes()
+    assert ocr.reading_lines(text)[-1] == "22"
+    assert ocr.reading_candidates(text) == {("arabic", 22): "22"}
+    result = extract_book(book.path, book.id, book.language, ocr_root=root)
+    assert result.pages[0].printed_page == "22"
+    assert not result.passages[0].check_page
+    assert all(
+        "Copyrighted material" not in passage.text for passage in result.passages
+    )
+    assert all(not passage.text.endswith("22") for passage in result.passages)
+    assert (root / book.id / "1.json").read_bytes() == before
+
+
 def test_recheck_finalizes_partial_and_preserves_historical_attempts(book, tmp_path):
     root = tmp_path / "ocr"
     record = kept(

@@ -97,31 +97,47 @@ class VisionEndpoint:
 
 
 def reading_lines(text):
-    """1. Drop exact preview-watermark lines from an in-memory reading copy."""
+    """1. Remove preview-watermark words, retaining adjoining numbers and text."""
     return [
-        line for line in text.splitlines() if line.strip() != "Copyrighted material"
+        line.replace("Copyrighted material", "").strip() for line in text.splitlines()
     ]
 
 
-def reading_candidates(text):
+def reading_candidates(text, neighbours=None):
     """1. Ignore preview watermarks and inspect the first and last nonempty lines.
-    2. Accept whole decimal or Roman numbers in either case for sequence checks.
+    2. Find whole integer or Roman tokens, including tokens beside edge headers.
+    3. When neighbours are supplied, require their support for inline numbers.
     """
     lines = [line.strip() for line in reading_lines(text) if line.strip()]
     numbers = [reading_number(line) for line in lines[:1] + lines[-1:]]
-    return {parsed: token for parsed, token, _ in numbers if parsed}
+    return {
+        parsed: token
+        for parsed, token, remainder in numbers
+        if parsed
+        and (
+            not remainder
+            or neighbours is None
+            or any(
+                (parsed[0], parsed[1] + offset) in other for offset, other in neighbours
+            )
+        )
+    }
 
 
 def reading_number(line):
     """1. Accept a whole printed number, preserving its original spelling.
-    2. Accept a Roman numeral beside an edge header and preserve that header.
+    2. Accept a whole integer or Roman token beside a header, preserving the header.
     3. Return the number, its spelling and remaining source text separately.
     """
     line = line.strip()
     if parsed := _number(line):
         return parsed, line, ""
     for parts in (line.split(maxsplit=1), list(reversed(line.rsplit(maxsplit=1)))):
-        if len(parts) == 2 and (parsed := _number(parts[0])) and parsed[0] == "roman":
+        if (
+            len(parts) == 2
+            and (parsed := _number(parts[0]))
+            and parsed[0] in {"arabic", "roman"}
+        ):
             return parsed, parts[0], parts[1]
     return None, "", line
 
@@ -184,6 +200,11 @@ def failed_rules(
         reasons.append("empty-ink")
     if source not in {"ocr", "inherited-ocr"}:
         return reasons
+    if source == "ocr":
+        supported = reading_candidates(text, neighbours)
+        candidates = {
+            key: value for key, value in candidates.items() if key in supported
+        }
     if len(text) >= LANGUAGE_MIN and detect_language(text) != language_code(language):
         reasons.append("language")
     share, count = nonword_share(text)
