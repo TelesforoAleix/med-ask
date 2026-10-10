@@ -96,9 +96,18 @@ class VisionEndpoint:
         )
 
 
+def reading_lines(text):
+    """1. Drop exact preview-watermark lines from an in-memory reading copy."""
+    return [
+        line for line in text.splitlines() if line.strip() != "Copyrighted material"
+    ]
+
+
 def reading_candidates(text):
-    """1. Inspect only the first and last nonempty lines for whole printed numbers."""
-    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    """1. Ignore preview watermarks and inspect the first and last nonempty lines.
+    2. Accept whole decimal or Roman numbers in either case for sequence checks.
+    """
+    lines = [line.strip() for line in reading_lines(text) if line.strip()]
     return {
         parsed: line for line in (lines[:1] + lines[-1:]) if (parsed := _number(line))
     }
@@ -280,11 +289,11 @@ def inspect_book(book, root=ROOT):
 def read_book(book, endpoint, root=ROOT, limit=None, output=print):
     """1. Skip hidden placeholders, check existing text, and resume current readings.
     2. Read failing pages at 300 DPI, one at a time; persist every completed reply.
-    3. Retry a failing upright reply once at 180 degrees and retain fewer failures.
+    3. Retry only empty-with-ink or malformed upright replies once at 180 degrees.
     4. Stop cleanly when vision is unavailable, keeping durable progress.
     5. Report only counts and diagnostics, never book text or reported model names.
     """
-    pages = inspect_book(book, root)
+    pages = recheck_book(book, root)
     read = 0
     with pymupdf.open(book.path) as doc:
         for page in pages:
@@ -357,7 +366,9 @@ def read_book(book, endpoint, root=ROOT, limit=None, output=print):
                     key=lambda r: (len(r["rules_failed"]), r["rotated"]),
                 )
                 record.update(best)
-                record["complete"] = rotated or not reading["rules_failed"]
+                record["complete"] = rotated or not needs_rotation(
+                    reading["rules_failed"]
+                )
                 save_reading(book.id, index, record, root)
                 if record["complete"]:
                     break
@@ -376,6 +387,32 @@ def read_book(book, endpoint, root=ROOT, limit=None, output=print):
                 flush=True,
             )
     return True
+
+
+def needs_rotation(reasons):
+    """1. Retry only nearly empty inked readings or excessive malformed words."""
+    return bool({"empty-ink", "nonwords"}.intersection(reasons))
+
+
+def recheck_book(book, root=ROOT):
+    """1. Recompute current rules for every kept reading without model calls.
+    2. Finalize partial readings that no longer need a rotation retry.
+    3. Atomically save changed status, preserving text and historical attempts.
+    4. Return the rechecked diagnostics for reading or queue reporting.
+    """
+    pages = inspect_book(book, root)
+    for page in pages:
+        record = page["record"]
+        if not record:
+            continue
+        complete = record["complete"] or not needs_rotation(page["rules_failed"])
+        if (
+            record["rules_failed"] != page["rules_failed"]
+            or complete != record["complete"]
+        ):
+            record.update(rules_failed=page["rules_failed"], complete=complete)
+            save_reading(book.id, page["pdf_page"], record, root)
+    return pages
 
 
 def queue_summary(book, root=ROOT):

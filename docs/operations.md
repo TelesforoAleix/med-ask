@@ -346,7 +346,7 @@ The inspectable thresholds in `ocr.py` are:
 | `empty-ink` | Fewer than 40 trimmed characters on a page with ink |
 | `language` | At least 1,000 characters; the app's existing detector disagrees with the book language |
 | `nonwords` | More than 50% malformed tokens among at least 50 eligible tokens |
-| `number-missing` | No whole printed number in a reading's first or last nonempty line, or an inherited text layer's margins |
+| `number-missing` | No whole decimal or Roman number (either case) in a reading's first or last non-watermark line, or an inherited text layer's margins |
 | `number-order` | A printed number conflicts with nearby numbers of the same numbering family, within two PDF pages |
 | `token-limit` | A vision reply finishes with `length` |
 
@@ -375,8 +375,16 @@ docker logs --tail 20 <container-id>
 PDF pages, short reason codes and counts, including pages awaiting a first reading.
 It reports hidden / kept / read and passing / queued totals, word-shape quantiles,
 seconds for completed calls, rotation retries and rescues. It sends nothing elsewhere.
-A failed upright reading gets exactly one retry with its page rotated 180 degrees;
-fewer failed rules wins, with upright winning ties. Both replies remain intact.
+An upright reading gets one retry rotated 180 degrees only for `empty-ink` or
+`nonwords`. Number, language and token-limit failures alone queue it without a
+retry. Fewer failed rules wins, with upright winning ties. Both replies remain intact.
+Roman numerals in either case use their usual ordering. Exact `Copyrighted material`
+lines are ignored at the reading's edges and dropped when building passages,
+including Stryer's preview watermark; saved text and attempts remain untouched.
+Run `ocr-recheck <book-id>` to atomically refresh kept readings' reasons and
+finalize partial replies that no longer need rotation, without model calls.
+`ocr` also performs this re-check before resuming; the reading method version
+stays unchanged when only these checking rules change.
 
 Kept readings live only at `/data/originals/ocr/<book-id>/<pdf-page>.json`, covered
 by the originals backup. Each contains the selected text, `vision` rung, endpoint's
@@ -386,7 +394,8 @@ atomically; failure leaves the previous file intact. `METHOD_VERSION` covers the
 prompt, DPI and settings and must change when any of them changes. Older-version
 records are retained inside the replacement file. Current-version attempts are
 never repeated, even for queued pages. If interrupted after an upright reply,
-resume performs only its pending rotation. An HTTP 500 or lost connection stops
+resume performs only its pending rotation if the amended retry rules require it.
+An HTTP 500 or lost connection stops
 cleanly with exit code 3: no failed call is marked as a reading. Run the same command
 again to continue. An already completed reply stays durable if its retry is offline.
 
@@ -430,9 +439,12 @@ seconds per page, rotation retries and rescues. Readings remain only under
 and report repeated token-limit failures, atomic-write failures, or an ingest
 failure; do not switch the index after a failed run.
 
-Run full OCR detached, one book at a time, in this order: `stryer`, `passarge`,
-`alberts`, `mathews`. Keep each container until its exit code and log have been
-checked, then remove only that exited container. Never remove data or volumes.
+Stop and report the completed measurement before starting any full run. Include
+any upside-down Alberts sample page, its upright reading's line order and failed rules.
+
+Run full OCR detached, one book at a time, in this order: `mathews`, `stryer`,
+`alberts`. Passarge has no pages to read. Keep each container until its exit code
+and log have been checked, then remove only that exited container. Never remove data or volumes.
 These commands deliberately omit `--rm` so failed-run logs remain available:
 
 ```sh
@@ -444,8 +456,12 @@ docker logs med-ask-ocr-<book-id>
 docker rm med-ask-ocr-<book-id>
 ```
 
-After all readings are complete, ingest the four books into v3, one at a time,
-using the app's embedding setting. Pass `EMBEDDING_TIMEOUT=120` to **every** v3
+Ingest each book into v3 as soon as its full reading run is final and its queue
+is settled: `passarge` first, then `mathews`, `stryer`, and `alberts`. Keep exactly
+one embedding ingest active on the server; a ready book waits for that ingest
+to finish. Reading on the external machine may overlap a server ingest for a
+different book. Never ingest a book while it is still being read. Use the app's
+embedding setting. Pass `EMBEDDING_TIMEOUT=120` to **every** v3
 ingest: long passages can take about 45 seconds at about 20 tokens/s on the
 server's four cores. The app and eval keep their default 20-second timeout.
 Expect roughly 0.14–0.26 passages/s (about 70 characters/s), around 30 hours for
