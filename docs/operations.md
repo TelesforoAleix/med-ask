@@ -403,21 +403,92 @@ anyway. Their screen label says **from OCR — check the page**. Passing reading
 say **from OCR**; both are transcriptions of source pages, separate from generated
 answers and translations.
 
-For the OCR rebuild, wait for the owner's confirmation that the embedding
-comparison is closed and their choice of embedding purpose and roles. Check that
-no ingest is running before pulling or building. Add Stryer to the external
-manifest as `stryer`, language `Spanish`, with `eval_book = "stryer-bioquimica-6-es"`.
-Measure a bounded sample first and report rule counts and reading timings. Then
-read `stryer`, `passarge`, `alberts`, `mathews`, one at a time, and ingest each into
-`v3` using the app's selected embedding purpose and roles:
+### Server OCR rebuild after the embedding comparison
+
+Proceed only after the owner closes the comparison and names the app's embedding
+setting. The approved setting for this rebuild is `embed-large`, roles off. First
+check that no container with Compose service label `ingest` is running. In the
+server's private `.env`, set `EMBEDDING_PURPOSE=embed-large`,
+`EMBEDDING_ROLES=false`, and keep `INDEX_VERSION=v2`. Restart `med-ask.service`;
+it pulls main and rebuilds. Confirm health and a search plus generated answer over
+Tailscale, and check that the tailnet question's recorded table is the completed
+plain v2 table. Keep the private address and secrets out of logs. Rollback is
+`EMBEDDING_PURPOSE=embed`, roles off, followed by a restart while no ingest runs.
+
+Check for running ingest containers again, pull the clone and run
+`docker compose build`. The running app keeps its image and v2 index. Add Stryer
+to the external manifest as `stryer`, language `Spanish`, with
+`eval_book = "stryer-bioquimica-6-es"`. Keep its original PDF filename.
+
+Measure before the full run. Inspect the rules for all books, then read at most
+20 eligible pages per book with `ocr <book-id> --limit 20`. Born-digital pages
+that pass the empty-with-ink check must keep their publisher text: if a book has
+fewer than 20 eligible pages, report that count rather than forcing readings.
+Report kept, hidden, read-and-passing and queued counts, rule failures, reading
+seconds per page, rotation retries and rescues. Readings remain only under
+`/data/originals/ocr/`. If vision is unavailable, stop and resume when told. Stop
+and report repeated token-limit failures, atomic-write failures, or an ingest
+failure; do not switch the index after a failed run.
+
+Run full OCR detached, one book at a time, in this order: `stryer`, `passarge`,
+`alberts`, `mathews`. Keep each container until its exit code and log have been
+checked, then remove only that exited container. Never remove data or volumes.
+These commands deliberately omit `--rm` so failed-run logs remain available:
 
 ```sh
-docker compose --profile ingest run -d --rm -e INDEX_VERSION=v3 ingest ingest <book-id>
-docker compose --profile ingest run --rm -e INDEX_VERSION=v3 ingest status stryer passarge alberts mathews
+docker compose --profile ingest run -d --name med-ask-ocr-<book-id> ingest ocr <book-id>
+docker logs --timestamps --tail 20 med-ask-ocr-<book-id>
+docker inspect --format '{{.State.Status}} {{.State.ExitCode}}' med-ask-ocr-<book-id>
+# After exit, read its completed log and verify success before removal.
+docker logs med-ask-ocr-<book-id>
+docker rm med-ask-ocr-<book-id>
 ```
 
-Only after every book is fully stored, set `INDEX_VERSION=v3` in `.env` and restart
-`med-ask.service`. Changing versions never deletes, drops or renames tables.
+After all readings are complete, ingest the four books into v3, one at a time,
+using the app's embedding setting. Pass `EMBEDDING_TIMEOUT=120` to **every** v3
+ingest: long passages can take about 45 seconds at about 20 tokens/s on the
+server's four cores. The app and eval keep their default 20-second timeout.
+Expect roughly 0.14–0.26 passages/s (about 70 characters/s), around 30 hours for
+the three original books plus Stryer. Leave the active ingest detached and report
+each book's measured rate from timestamped progress logs; do not build or restart
+while any ingest is running.
+
+```sh
+docker compose --profile ingest run -d --name med-ask-v3-<book-id> -e INDEX_VERSION=v3 -e EMBEDDING_PURPOSE=embed-large -e EMBEDDING_ROLES=false -e EMBEDDING_TIMEOUT=120 ingest ingest <book-id>
+docker logs --timestamps --tail 20 med-ask-v3-<book-id>
+# After exit, check the exit code, read the log, and remove the exited container.
+docker inspect --format '{{.State.Status}} {{.State.ExitCode}}' med-ask-v3-<book-id>
+docker logs med-ask-v3-<book-id>
+docker rm med-ask-v3-<book-id>
+docker compose --profile ingest run --name med-ask-v3-status -e INDEX_VERSION=v3 ingest status stryer passarge alberts mathews
+docker logs med-ask-v3-status
+docker rm med-ask-v3-status
+```
+
+Confirm every current passage id of every book is stored in the selected v3
+table. Only then set `INDEX_VERSION=v3` in `.env` and restart `med-ask.service`.
+Confirm both `homelab.service` and `med-ask.service` are active. Probe over
+Tailscale with two Spanish biochemistry questions and inspect only the caller's
+`asker=tailnet` candidates to establish whether Stryer appears. Keep source text
+out of probe output. Never drop, delete from or rename vector tables.
+
+Finally, run eval once on the app's setting and compare it with the named plain
+v2 baseline, without reading or printing eval questions. Keep both containers
+until their logs and exit codes have been read, then remove them:
+
+```sh
+docker compose --profile ingest run --name med-ask-v3-eval ingest eval
+# The log reports the newly written run filename under originals/eval/runs.
+docker logs med-ask-v3-eval
+docker rm med-ask-v3-eval
+docker compose --profile ingest run --name med-ask-v3-compare ingest eval --compare run-20261010T152043Z-embed-large-roles-off-97cc8d.json <new-run.json>
+docker logs med-ask-v3-compare
+docker rm med-ask-v3-compare
+```
+
+Report only Hit@5, Hit@10 and lost/gained ids from the eval and comparison. The
+scoring and gate remain unchanged. Restore `INDEX_VERSION=v2` and restart to
+select the preserved pre-OCR tables if the owner requests index rollback.
 
 ### Embedding comparison arms
 
