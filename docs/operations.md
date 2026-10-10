@@ -378,11 +378,18 @@ seconds for completed calls, rotation retries and rescues. It sends nothing else
 An upright reading gets one retry rotated 180 degrees only for `empty-ink` or
 `nonwords`. Number, language and token-limit failures alone queue it without a
 retry. Fewer failed rules wins, with upright winning ties. Both replies remain intact.
-Roman numerals in either case use their usual ordering. Exact `Copyrighted material`
-lines are ignored at the reading's edges and dropped when building passages,
-including Stryer's preview watermark; saved text and attempts remain untouched.
+Roman numerals in either case use their usual ordering. A whole integer or Roman
+token beside text at the start or end of an edge line counts when neighbouring
+pages support its sequence. Decimal figure and section numbers do not count.
+The words `Copyrighted material` are removed from readings used for extraction,
+retaining a number on the same line; saved text and attempts remain untouched.
 Run `ocr-recheck <book-id>` to atomically refresh kept readings' reasons and
 finalize partial replies that no longer need rotation, without model calls.
+After a checking correction, re-check each book before its versioned ingest and
+record queue totals and reason counts before and after. An existing OCR container
+keeps its original image: building the updated image does not replace that
+container. Wait for embedding ingests to exit before building, leave the reader
+untouched, and use the updated image for re-checks and subsequent ingests.
 `ocr` also performs this re-check before resuming; the reading method version
 stays unchanged when only these checking rules change.
 

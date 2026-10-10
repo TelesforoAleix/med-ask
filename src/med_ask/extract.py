@@ -1252,7 +1252,14 @@ def extract_book(
             section = tuple(bookmark_path)
             printed, reason = _positions(page_number, page_number, accounts)
             text = "\n".join(reading_lines(reading["text"]))
-            edge_numbers = reading_candidates(text)
+            edge_numbers = reading_candidates(
+                text,
+                [
+                    (offset, candidates[index + offset])
+                    for offset in (-2, -1, 1, 2)
+                    if 0 <= index + offset < len(candidates)
+                ],
+            )
             lines = text.splitlines()
             nonempty = [i for i, line in enumerate(lines) if line.strip()]
             for position in nonempty[:1] + nonempty[-1:]:
