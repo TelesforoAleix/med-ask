@@ -26,7 +26,6 @@ from med_ask.figures import REFERENCE, figure_entries, label_key
 NEIGHBOUR_WORDS = 120
 INDEX_VERSION = "v2"
 SEARCH_KINDS = ("content", "summary", "glossary")
-FIGURE_CANDIDATES = 10
 
 
 class NoIndex(ValueError):
@@ -384,7 +383,7 @@ def search(question, endpoint, database, store_factory=vector_store, k=10):
     2. Refuse absent tables or a mismatched recorded model or dimension.
     3. Retrieve content, summary and glossary with their original passage ranks.
     4. For v5, retrieve figures separately using the same question embedding.
-    5. Append at most ten distinct figures, reserving half for passage references.
+    5. Append up to the configured four figures, reserving half for references.
     6. Return source-only evidence text without descriptions or discovery notes.
     """
     embedded = embed_query(endpoint, question)
@@ -425,22 +424,23 @@ def search(question, endpoint, database, store_factory=vector_store, k=10):
         ]
         if os.environ.get("INDEX_VERSION", INDEX_VERSION) != "v5":
             return evidence, table, embedded.seconds
+        figure_limit = int(os.environ.get("FIGURE_CANDIDATES", "4"))
         figures = index.as_retriever(
-            similarity_top_k=FIGURE_CANDIDATES,
+            similarity_top_k=figure_limit,
             filters=MetadataFilters(
                 filters=[MetadataFilter(key="kind", value="figure")]
             ),
         ).retrieve(QueryBundle(query_str=question, embedding=embedded.vectors[0]))
         seen = {e.id for e in evidence}
         figure_count = 0
-        for match in figures[: FIGURE_CANDIDATES // 2]:
+        for match in figures[: figure_limit // 2]:
             if match.node.node_id not in seen:
                 evidence.append(evidence_from_node(match.node, match.score))
                 seen.add(match.node.node_id)
                 figure_count += 1
         # Reserve half the figure budget for references in passage order.
         for match in matches:
-            if figure_count >= FIGURE_CANDIDATES:
+            if figure_count >= figure_limit:
                 break
             identities = [
                 identity
@@ -453,7 +453,7 @@ def search(question, endpoint, database, store_factory=vector_store, k=10):
                 node.node_id: node for node in store.get_nodes(node_ids=identities)
             }
             for identity in identities:
-                if figure_count >= FIGURE_CANDIDATES:
+                if figure_count >= figure_limit:
                     break
                 node = linked_nodes.get(identity)
                 if (
@@ -467,7 +467,7 @@ def search(question, endpoint, database, store_factory=vector_store, k=10):
                 seen.add(node.node_id)
                 figure_count += 1
         for match in figures:
-            if figure_count >= FIGURE_CANDIDATES:
+            if figure_count >= figure_limit:
                 break
             if match.node.node_id not in seen:
                 evidence.append(evidence_from_node(match.node, match.score))

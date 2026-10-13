@@ -92,7 +92,12 @@ def create_app() -> Flask:
             language = detect_language(question)
             identity = db.begin_question(question, who, language)
             endpoint = app.config.get("EMBEDDING_ENDPOINT") or Endpoint()
-            candidates, table, embedding_seconds = search(question, endpoint, db, k=30)
+            candidates, table, embedding_seconds = search(
+                question,
+                endpoint,
+                db,
+                k=int(os.environ.get("PASSAGE_CANDIDATES", "26")),
+            )
             generation = app.config.get("GENERATION_ENDPOINT") or GenerationEndpoint()
             flags, grading_seconds = grade_candidates(question, candidates, generation)
             groups = group_evidence(candidates, flags, language)
