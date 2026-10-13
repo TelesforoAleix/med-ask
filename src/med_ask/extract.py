@@ -45,6 +45,67 @@ KIND_HEADINGS = {
         "selected introductory reading",
     },
 }
+EXCLUDED_HEADINGS = {
+    "index",
+    "índice",
+    "content",
+    "contents",
+    "detailed contents",
+    "contenido",
+    "resumen del contenido",
+}
+
+
+def excluded_section(section):
+    """1. Match the shared contents/index titles in the section path."""
+    return any(title.strip().casefold() in EXCLUDED_HEADINGS for title in section)
+
+
+def reading_heading(line):
+    """1. Recognise exact kind and contents/index titles, including spaced letters.
+    2. Accept short uppercase or title-case lines without sentence/list punctuation.
+    3. Leave ordinary prose and figure markers as source text.
+    """
+    title = line.strip()
+    if passage_kind((title,)) != "content" or excluded_section((title,)):
+        return True
+    words = title.split()
+    return (
+        1 <= len(words) <= 14
+        and len(title) <= 120
+        and any(c.isalpha() for c in title)
+        and not re.search(r"[.!?;:,…\[\]=]", title)
+        and not LIST_START.match(title)
+        and (title.isupper() or title.istitle())
+    )
+
+
+def cut_reading_loop(text):
+    """1. Compare consecutive token patterns of one to 64 tokens.
+    2. Require eight copies, at least 64 tokens and 200 characters of repetition.
+    3. Also recognise 200 copies of one horizontal whitespace character.
+    4. Drop the tail at the earliest pattern start, retaining preceding text.
+    5. Return unchanged text when no sustained repetition is found.
+    """
+    matches = list(re.finditer(r"\w+|[^\w\s]", text))
+    tokens = [match.group() for match in matches]
+    cut = len(text)
+    whitespace = re.search(r"([^\S\r\n])\1{199,}", text)
+    if whitespace:
+        cut = whitespace.start()
+    for period in range(1, min(64, len(tokens) // 8) + 1):
+        start = period
+        for index in range(period, len(tokens) + 1):
+            if index < len(tokens) and tokens[index] == tokens[index - period]:
+                continue
+            first = start - period
+            if (
+                index - first >= max(64, period * 8)
+                and matches[index - 1].end() - matches[first].start() >= 200
+            ):
+                cut = min(cut, matches[first].start())
+            start = index + 1
+    return text[:cut].rstrip() if cut < len(text) else text
 
 
 def passage_kind(section_path: tuple[str, ...]) -> str:
@@ -1101,8 +1162,8 @@ def extract_book(
 ) -> Extraction:
     """1. Read positioned text, margin numbers, bookmarks, and diagnostic labels.
     2. Classify provenance, exclude hidden placeholders, and verify numbering.
-    3. Substitute kept readings, separating captions, headings, and failed rules.
-    4. Remove margins and figure labels from PDF text; assign its sections.
+    3. Cut repeated reading tails; separate captions, headings, and failed rules.
+    4. Exclude contents/index sections; remove PDF margins and figure labels.
     5. Reassemble PDF fragments, preserving legacy boundaries without readings.
     6. Assign kinds and join passing content sentences across body-free pages.
     7. Return plain records in memory, including an account of every PDF page.
@@ -1249,9 +1310,9 @@ def extract_book(
             continue
         if readings[index]:
             reading = readings[index]
-            section = tuple(bookmark_path)
+            section = tuple(bookmark_path + [title for _, title in heading_path])
             printed, reason = _positions(page_number, page_number, accounts)
-            text = "\n".join(reading_lines(reading["text"]))
+            text = "\n".join(reading_lines(cut_reading_loop(reading["text"])))
             edge_numbers = reading_candidates(
                 text,
                 [
@@ -1295,7 +1356,7 @@ def extract_book(
                     continue
                 group = []
                 for line in paragraph.splitlines():
-                    if passage_kind((line,)) != "content":
+                    if reading_heading(line):
                         if group:
                             _reading_passage(
                                 passages,
@@ -1309,7 +1370,19 @@ def extract_book(
                                 reading,
                             )
                             group = []
-                        section = tuple(bookmark_path) + (line.strip(),)
+                        size = body_size * (
+                            1.35 if passage_kind((line,)) != "content" else 1.2
+                        )
+                        while heading_path and size >= heading_path[-1][0] * 0.97:
+                            heading_path.pop()
+                        if (
+                            not bookmark_path
+                            or line.strip().casefold() != bookmark_path[-1].casefold()
+                        ):
+                            heading_path.append((size, line.strip()))
+                        section = tuple(
+                            bookmark_path + [title for _, title in heading_path]
+                        )
                     else:
                         group.append(line)
                 if group:
@@ -1468,19 +1541,7 @@ def extract_book(
             ):
                 continue
             section = tuple(bookmark_path + [title for _, title in heading_path])
-            if any(
-                title.strip().casefold()
-                in {
-                    "index",
-                    "índice",
-                    "content",
-                    "contents",
-                    "detailed contents",
-                    "contenido",
-                    "resumen del contenido",
-                }
-                for title in bookmark_path
-            ):
+            if excluded_section(bookmark_path):
                 continue
             printed, reason = _positions(page_number, page_number, accounts)
             location = {"pdf_page": page_number, "bbox": block.bbox}
@@ -1584,7 +1645,11 @@ def extract_book(
 def _reading_passage(
     passages, book_id, language, page, printed, reason, section, lines, reading
 ):
-    """1. Preserve a reading's paragraph as one passage with its source and failures."""
+    """1. Exclude contents/index sections using the same titles as the text layer.
+    2. Preserve a reading's paragraph as one passage with its source and failures.
+    """
+    if excluded_section(section) or not any(line.strip() for line in lines):
+        return
     passage = Passage(
         book_id,
         language,

@@ -684,3 +684,164 @@ def test_hidden_pages_are_not_read_or_queued_and_status_counts_them(
     assert rows[0]["hidden"] == 2
     assert rows[0]["stored"] == rows[0]["extracted"] == 0
     assert ocr.failed_rules("Hidden page", "English", "hidden", True, {}) == []
+
+
+@pytest.mark.parametrize(
+    "title",
+    ["Index", "Índice", "Contents", "Detailed contents", "Resumen del contenido"],
+)
+def test_readings_exclude_bookmark_contents_and_index(book, tmp_path, title):
+    with pymupdf.open(book.path) as doc:
+        doc.set_toc([[1, title, 1], [1, "Synthetic chapter", 2]])
+        doc.saveIncr()
+    root = tmp_path / "ocr"
+    kept(root, book, 1, "10\n\nSummary\n\nSynthetic excluded source paragraph.")
+    kept(root, book, 2, "11\n\nSynthetic retained source paragraph.")
+    result = extract_book(book.path, book.id, book.language, ocr_root=root)
+    assert [p.pdf_pages for p in result.passages] == [(2, 2)]
+
+
+@pytest.mark.parametrize(
+    "heading", ["PROBLEMS", "P R O B L E M S", "Respuestas a los problemas"]
+)
+def test_reading_heading_overrides_bookmark_and_persists(book, tmp_path, heading):
+    with pymupdf.open(book.path) as doc:
+        doc.set_toc([[1, "Summary", 1], [1, "Next chapter", 3]])
+        doc.saveIncr()
+    root = tmp_path / "ocr"
+    kept(
+        root,
+        book,
+        1,
+        "10\n\n" + heading + "\n\nSynthetic Topic\n\nA synthetic exercise paragraph.",
+    )
+    kept(root, book, 2, "11\n\nAnother synthetic exercise paragraph.")
+    kept(root, book, 3, "12\n\nAnother synthetic content paragraph.")
+    result = extract_book(book.path, book.id, book.language, ocr_root=root)
+    assert [p.kind for p in result.passages] == ["exercise", "exercise", "content"]
+    assert result.passages[0].section_path == ("Summary", heading, "Synthetic Topic")
+    assert result.passages[1].section_path == result.passages[0].section_path
+    assert all(heading not in p.text for p in result.passages)
+
+
+def test_reading_on_page_contents_heading_excludes_prose(book, tmp_path):
+    root = tmp_path / "ocr"
+    kept(
+        root, book, 1, "10\n\nCONTENTS\n\nSynthetic chapter entry with its page number."
+    )
+    assert not extract_book(book.path, book.id, book.language, ocr_root=root).passages
+
+
+@pytest.mark.parametrize(
+    "pattern", ["C ", "VIIa ↓ ", "Synthetic repeated diagram label ", "\u2003"]
+)
+def test_loop_cut_preserves_prefix_and_queue_without_writes(book, tmp_path, pattern):
+    from med_ask.extract import cut_reading_loop
+
+    root = tmp_path / "ocr"
+    prefix = "10\n\nA synthetic good paragraph before the diagram.\n\n"
+    text = prefix + pattern * 300
+    kept(root, book, 1, text, finish_reason="length")
+    path = root / book.id / "1.json"
+    before = path.read_bytes()
+    assert cut_reading_loop(text) == prefix.rstrip()
+    result = extract_book(book.path, book.id, book.language, ocr_root=root)
+    assert len(result.passages) == 1
+    passage = result.passages[0]
+    assert passage.text == "A synthetic good paragraph before the diagram."
+    assert passage.text_source == "ocr" and passage.check_page
+    assert "token-limit" in passage.ocr_reasons
+    assert "token-limit" in ocr.queue_summary(book, root)["queue"][0]["reasons"]
+    assert path.read_bytes() == before
+
+
+def test_loop_cut_leaves_ordinary_repetition_and_prose_intact():
+    from med_ask.extract import cut_reading_loop, reading_heading
+
+    for text in [
+        "C C C C C",
+        "VIIa ↓ " * 7,
+        "A normal synthetic sentence.\n\n" * 4,
+        "word " * 39,
+    ]:
+        assert cut_reading_loop(text) == text
+    for text in [
+        "Ordinary source prose ends here.",
+        "1. Synthetic exercise",
+        "[FIGURE 1]",
+        "a short line",
+    ]:
+        assert not reading_heading(text)
+
+
+def test_page_timeout_has_one_retry_is_queued_and_run_continues(book, tmp_path):
+    root = tmp_path / "ocr"
+    timeout = ocr.VisionPageTimeout("Synthetic timeout")
+    fake = endpoint(
+        timeout,
+        timeout,
+        reply("11\n\nA synthetic source paragraph completes successfully."),
+    )
+    assert ocr.read_book(book, fake, root, limit=2, output=lambda *a, **k: None)
+    record = ocr.load_reading(book.id, 1, root)
+    assert record["complete"] and len(record["readings"]) == 2
+    assert all(r["finish_reason"] == "timeout" for r in record["readings"])
+    assert "page-timeout" in record["rules_failed"]
+    assert ocr.load_reading(book.id, 2, root)["text"].startswith("11")
+    assert "page-timeout" in ocr.queue_summary(book, root)["queue"][0]["reasons"]
+    unused = endpoint()
+    assert ocr.read_book(book, unused, root, limit=0, output=lambda *a, **k: None)
+    unused.read.assert_not_called()
+
+
+def test_timeout_retry_success_and_interrupted_resume(book, tmp_path):
+    root = tmp_path / "ocr"
+    timeout = ocr.VisionPageTimeout("Synthetic timeout")
+    outage = ocr.VisionUnavailable("Synthetic outage")
+    assert not ocr.read_book(
+        book, endpoint(timeout, outage), root, limit=1, output=lambda *a, **k: None
+    )
+    record = ocr.load_reading(book.id, 1, root)
+    assert not record["complete"] and len(record["readings"]) == 1
+    fake = endpoint(reply())
+    assert ocr.read_book(book, fake, root, limit=1, output=lambda *a, **k: None)
+    record = ocr.load_reading(book.id, 1, root)
+    assert fake.read.call_count == 1 and record["complete"] and record["rotated"]
+    assert record["rules_failed"] == []
+    assert record["readings"][0]["finish_reason"] == "timeout"
+
+
+@pytest.mark.parametrize(
+    "failure,expected",
+    [
+        ("timeout", ocr.VisionPageTimeout),
+        ("connection", ocr.VisionUnavailable),
+        ("server", ocr.VisionUnavailable),
+    ],
+)
+def test_endpoint_distinguishes_timeout_from_outage(monkeypatch, failure, expected):
+    monkeypatch.setenv("MODEL_BASE_URL", "http://synthetic.invalid/v1")
+    monkeypatch.setenv("MODEL_API_KEY", "unused")
+    calls = []
+
+    def respond(request):
+        calls.append(request)
+        assert request.extensions["timeout"]["read"] == 180
+        if failure == "timeout":
+            raise httpx.ReadTimeout("Synthetic timeout", request=request)
+        if failure == "connection":
+            raise httpx.ConnectError("Synthetic connection failure", request=request)
+        return httpx.Response(
+            503, json={"error": {"message": "Synthetic server failure"}}
+        )
+
+    fake = ocr.VisionEndpoint()
+    fake.client = OpenAI(
+        base_url="http://synthetic.invalid/v1",
+        api_key="unused",
+        max_retries=0,
+        http_client=httpx.Client(transport=httpx.MockTransport(respond)),
+    )
+    with pytest.raises(expected):
+        fake.read(b"synthetic PNG bytes")
+    assert len(calls) == 1

@@ -19,7 +19,7 @@ from med_ask.manifest import load_manifest
 from med_ask.ocr import VisionEndpoint, queue_summary, read_book, recheck_book
 from med_ask.retrieval import ingest_book, ingest_status, search
 
-DEFAULT_EVAL_FILE = "/data/originals/eval/med-ask-eval.v1.jsonl"
+DEFAULT_EVAL_FILE = "/data/originals/eval/med-ask-eval.v2.jsonl"
 
 
 def evaluate(args, parser):

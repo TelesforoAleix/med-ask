@@ -43,6 +43,10 @@ class VisionUnavailable(RuntimeError):
     pass
 
 
+class VisionPageTimeout(RuntimeError):
+    pass
+
+
 class VisionEndpoint:
     def __init__(self):
         self.client = OpenAI(
@@ -54,7 +58,7 @@ class VisionEndpoint:
     def read(self, png):
         """1. Send only an in-memory data PNG to the vision purpose, without retries.
         2. Return the unmodified text, reported identity, and completion reason.
-        3. Signal unavailable service without including endpoint response text.
+        3. Distinguish page timeouts from outages without endpoint response text.
         """
         try:
             reply = self.client.chat.completions.create(
@@ -78,7 +82,9 @@ class VisionEndpoint:
                 max_tokens=MAX_TOKENS,
                 timeout=180,
             )
-        except (APIConnectionError, APITimeoutError) as error:
+        except APITimeoutError as error:
+            raise VisionPageTimeout("page request timed out") from error
+        except APIConnectionError as error:
             raise VisionUnavailable(
                 "vision is not serving; run again to resume"
             ) from error
@@ -185,7 +191,7 @@ def has_ink(page):
 def failed_rules(
     text, language, source, ink, candidates, neighbours=(), finish_reason="stop"
 ):
-    """1. Skip hidden placeholders, then check incomplete replies and missing text.
+    """1. Skip hidden placeholders; check token limits, timeouts and missing text.
     2. Keep publisher text except nearly empty pages with ink; check OCR language.
     3. Measure malformed word shapes only when at least 50 tokens are available.
     4. Require a printed number for OCR; reject conflicts with nearby numbers.
@@ -196,6 +202,8 @@ def failed_rules(
         return reasons
     if source == "ocr" and finish_reason == "length":
         reasons.append("token-limit")
+    if source == "ocr" and finish_reason == "timeout":
+        reasons.append("page-timeout")
     if len(text.strip()) < EMPTY_MIN and ink:
         reasons.append("empty-ink")
     if source not in {"ocr", "inherited-ocr"}:
@@ -323,7 +331,7 @@ def inspect_book(book, root=ROOT):
 def read_book(book, endpoint, root=ROOT, limit=None, output=print):
     """1. Skip hidden placeholders, check existing text, and resume current readings.
     2. Read failing pages at 300 DPI, one at a time; persist every completed reply.
-    3. Retry only empty-with-ink or malformed upright replies once at 180 degrees.
+    3. Record page timeouts and retry failing upright attempts at most once.
     4. Stop cleanly when vision is unavailable, keeping durable progress.
     5. Report only counts and diagnostics, never book text or reported model names.
     """
@@ -370,6 +378,8 @@ def read_book(book, endpoint, root=ROOT, limit=None, output=print):
                 started = perf_counter()
                 try:
                     reading = endpoint.read(png)
+                except VisionPageTimeout:
+                    reading = dict(text="", model="", finish_reason="timeout")
                 except VisionUnavailable:
                     output(
                         f"{book.id}: vision is not serving; "
@@ -397,7 +407,11 @@ def read_book(book, endpoint, root=ROOT, limit=None, output=print):
                 record["readings"].append(reading)
                 best = min(
                     record["readings"],
-                    key=lambda r: (len(r["rules_failed"]), r["rotated"]),
+                    key=lambda r: (
+                        r["finish_reason"] == "timeout",
+                        len(r["rules_failed"]),
+                        r["rotated"],
+                    ),
                 )
                 record.update(best)
                 record["complete"] = rotated or not needs_rotation(
@@ -424,8 +438,8 @@ def read_book(book, endpoint, root=ROOT, limit=None, output=print):
 
 
 def needs_rotation(reasons):
-    """1. Retry only nearly empty inked readings or excessive malformed words."""
-    return bool({"empty-ink", "nonwords"}.intersection(reasons))
+    """1. Retry nearly empty inked readings, malformed words or a timeout once."""
+    return bool({"empty-ink", "nonwords", "page-timeout"}.intersection(reasons))
 
 
 def recheck_book(book, root=ROOT):
