@@ -320,7 +320,10 @@ def test_successful_search_logs_labels_and_scores(app, monkeypatch):
     ]
 
 
-def test_figure_description_is_unused_in_grade_browser_log_and_answer(app, monkeypatch):
+@pytest.mark.parametrize("version", ["v5", "v6"])
+def test_figure_description_is_unused_in_grade_browser_log_and_answer(
+    app, monkeypatch, version
+):
     import json
     from dataclasses import replace
 
@@ -331,12 +334,13 @@ def test_figure_description_is_unused_in_grade_browser_log_and_answer(app, monke
         candidate(),
         kind="figure",
         text="Figure 3-12 Invented caption.",
-        figure_label="Figure 3-12",
+        figure_label="Synthetic plate A",
+        figure_pdf_page=32,
         description="Generated synthetic spindle.",
         found_by_description=True,
     )
     monkeypatch.setattr(
-        "med_ask.search", lambda *a, **k: ([figure], "e_v5_synthetic", 0.01)
+        "med_ask.search", lambda *a, **k: ([figure], f"e_{version}_synthetic", 0.01)
     )
     generation.complete.side_effect = [
         "yes",
@@ -355,6 +359,8 @@ def test_figure_description_is_unused_in_grade_browser_log_and_answer(app, monke
     assert response.status_code == 200
     item = response.json["evidence"][0]
     assert item["text"] == figure.text and not item["found_by_description"]
+    assert item["figure_label"] == "Synthetic plate A"
+    assert item["figure_pdf_page"] == 32
     assert "description" not in item
     assert figure.description not in response.data.decode()
     row = database.rows[response.json["question_id"]]

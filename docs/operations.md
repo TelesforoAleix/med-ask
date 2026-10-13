@@ -979,3 +979,122 @@ advances only that reading's cache metadata, preserving the selected text and
 all other input fingerprints; unrelated changes still require a rebuild.
 The existing page-image route and a hinted reading may render their one requested
 page. Queue, page detail and saving resolutions never open a PDF.
+
+## Passarge panels and the v6 index
+
+Figures are enabled for v5 and every later numeric version. v5 keeps its whole
+Passarge plates and stored title links. v6 splits the 192 ordinary plates with
+lettered legends into one entry per panel. The unlettered plate on PDF 200 and
+the five maps on PDF 422–426 remain whole entries. Panels use the printed plate
+title plus letter, cite the legend, and open the whole plate. No descriptions,
+crops or model calls are involved in extraction. Other books are unchanged.
+
+Read the two legend columns left to right and split at bold `A.`, `B.`, etc.
+headings, stopping before the printed references. Opening text is included only
+when it has at most 200 characters and at most one third of that panel's text
+length; the panel therefore supplies at least three quarters of the caption.
+Legend passage locations select the panel containing their paragraph. If a
+passage spans panels or belongs to none, it brings that plate's panels in letter
+order. Source text, passage ids, kinds and kept readings remain unchanged.
+
+Leave the app on v5 throughout deployment, counting, building and scoring.
+Initialize the v6 vector table with LlamaIndex, copy the unchanged Alberts,
+Mathews and Stryer rows with **one SQL INSERT**, and use existing bookkeeping
+methods. This needs no embedding endpoint. Save this code on the node under
+`/data/originals/eval/fig-work/copy-v6.py`; never print rows or credentials:
+
+```python
+import os
+from psycopg import sql
+from med_ask.database import Database
+from med_ask.retrieval import managed_store, vector_store
+
+books = ["alberts", "mathews", "stryer"]
+database = Database(os.environ["DATABASE_URL"])
+models = [row for row in database.models() if row[0].startswith("e_v5_")]
+assert len(models) == 1
+source, model, dimensions = models[0]
+target = source.replace("e_v5_", "e_v6_", 1)
+with managed_store(vector_store, database.url, target, dimensions, setup=True) as store:
+    # The library owns table creation, column types, defaults and indexes.
+    assert not store.get_nodes(node_ids=["v6-table-initialization"])
+with database.connect() as connection:
+    connection.execute(
+        sql.SQL("""
+        INSERT INTO {} (text, metadata_, node_id, embedding)
+        SELECT s.text, s.metadata_, s.node_id, s.embedding FROM {} s
+        WHERE s.metadata_->>'book_id' = ANY(%s)
+          AND NOT EXISTS (SELECT 1 FROM {} t WHERE t.node_id = s.node_id)
+    """).format(
+            sql.Identifier("data_" + target),
+            sql.Identifier("data_" + source),
+            sql.Identifier("data_" + target),
+        ),
+        (books,),
+    )
+    counts = connection.execute(
+        "SELECT book_id, extracted FROM medask_books "
+        "WHERE table_name=%s AND book_id=ANY(%s)",
+        (source, books),
+    ).fetchall()
+assert len(counts) == 3
+database.register(target, model, dimensions)
+for book, count in counts:
+    database.book_count(target, book, count)
+print("Copied and registered three unchanged books", flush=True)
+```
+
+Run node commands via `ssh homelab-agent 'sudo …'` from
+`/srv/homelab/med-ask`. The library's table initialization and the single INSERT
+are the copy plan; no manual DDL or old-table writes are needed. If the inspected
+schema cannot support this plan, use a full detached v6 ingest instead (about
+three hours), and report that choice before booking the GPU.
+
+Before embedding, extract Passarge and record panels, whole plates, maps,
+passages, unique ids, duplicate ids and legend passages gaining links. Read v5's
+per-book/per-kind copy row counts without printing text. Save only these counts
+under `/data/originals/eval/fig-work/`. For work over a minute, start a retained
+named detached container and hand off its log and `docker wait` command. Never
+poll a running job.
+
+The chosen copy plus Passarge build needs approximately 20–30 minutes of the
+shared GPU, compared with about three hours for all four books. Request the GPU
+and end the turn waiting. Never start, stop or probe a Mac server. When resumed
+with `embed-large-bulk` serving, copy and then ingest Passarge in one detached
+container, saving the copy script beforehand:
+
+```sh
+docker compose --profile ingest run -d --name med-ask-v6-build -e INDEX_VERSION=v6 -e EMBEDDING_PURPOSE=embed-large-bulk -e EMBEDDING_ROLES=false -e EMBEDDING_TIMEOUT=300 --entrypoint sh ingest -c 'python /data/originals/eval/fig-work/copy-v6.py && python -m med_ask.ingest ingest passarge'
+# Completion command, run by whoever resumes the executor:
+docker wait med-ask-v6-build
+# Read once after completion:
+docker logs med-ask-v6-build
+```
+
+All v2–v5 tables and their bookkeeping rows remain untouched. Check the stored
+v6 ids against extraction, accounting for every count gap with repeated ids.
+Score through node `embed-large`, roles off; question text never leaves the node
+or enters output. Passage-only ranks must reach Hit@10 32/32 overall and 20/20
+on the existing cohort. The v5 baseline is Hit@5 28/32, Hit@10 32/32, cohort
+Hit@10 20/20. Do not substitute the ordinary Hit@5 comparison gate.
+
+```sh
+docker compose --profile ingest run -d --name med-ask-v6-score -e INDEX_VERSION=v6 -e EVAL_RUNS_DIR=/data/originals/eval/fig-work ingest eval --purpose embed-large --no-roles
+# After completion, compare the private v5 passage run and v6 result:
+docker compose --profile ingest run --name med-ask-v6-gate ingest eval --figure-gate /data/originals/eval/fig-work/<v5-passage-run>.json /data/originals/eval/fig-work/<v6-passage-run>.json --cohort /data/originals/eval/fig-work/cohort.json
+```
+
+Write three new questions from three different plates' panel paragraphs, keeping
+the questions only under `/data/originals/eval/fig-work/`. Run the app's 26-passage,
+four-figure candidate retrieval and grading without question logging. Each target
+panel must appear among the 30 graded candidates. Report ids, ranks, grades and
+plate/legend pages only, including the old PDF-228 Passarge probe's rank on v6.
+Never print or log probe text, book paragraphs or eval questions.
+
+Switch only after both the passage and panel gates pass. **Print this rollback
+before switching:** set `INDEX_VERSION=v5` in `/srv/homelab/med-ask/.env`, then
+`sudo systemctl restart med-ask.service`. Change only the index-version line;
+never display the private file. On pass set `INDEX_VERSION=v6`, restart, check
+that `med-ask.service` and `/api/health` are healthy, and verify a panel probe's
+passing evidence shows its printed panel label and opens its plate page. If
+any gate fails, leave the reader on v5 and report the measured failure.
