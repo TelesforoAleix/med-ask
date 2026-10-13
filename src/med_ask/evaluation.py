@@ -525,3 +525,55 @@ def comparison_lines(result: dict, baseline: dict, candidate: dict) -> list[str]
     if not b["scored"] and not c["scored"]:
         lines.append("Nothing scored in either run.")
     return lines
+
+
+def figure_gate(baseline, candidate, cohort_ids):
+    """1. Require v4 and v5 runs on the same eval set with roles off.
+    2. Require the same 32 scored ids and all 20 supplied cohort ids in both runs.
+    3. Report Hit@5 and Hit@10 overall and on the cohort without question text.
+    4. Pass only when v5 preserves v4's perfect overall and cohort Hit@10.
+    """
+    cohort = set(cohort_ids)
+    if (
+        baseline["set_version"] != 2
+        or candidate["set_version"] != 2
+        or not baseline["table"].startswith("e_v4_")
+        or not candidate["table"].startswith("e_v5_")
+        or any(
+            run.get("roles", False) or run["purpose"] != "embed-large"
+            for run in (baseline, candidate)
+        )
+    ):
+        raise EvalError(
+            "Figure gate requires v4 and v5, eval v2, embed-large, roles off"
+        )
+    before = {q["id"] for q in baseline["questions"] if q["scored"]}
+    after = {q["id"] for q in candidate["questions"] if q["scored"]}
+    if (
+        before != after
+        or len(before) != 32
+        or len(cohort) != 20
+        or not cohort <= before
+    ):
+        raise EvalError("Figure gate requires matching 32 scored ids and 20 cohort ids")
+
+    def counts(run, ids):
+        selected = [q for q in run["questions"] if q["id"] in ids]
+        return {
+            "n": len(selected),
+            "hit5": sum(q["hit5"] for q in selected),
+            "hit10": sum(q["hit10"] for q in selected),
+        }
+
+    result = {
+        name: {"overall": counts(run, before), "cohort": counts(run, cohort)}
+        for name, run in (("v4", baseline), ("v5", candidate))
+    }
+    if result["v4"]["overall"]["hit10"] != 32 or result["v4"]["cohort"]["hit10"] != 20:
+        raise EvalError(
+            "The measured v4 baseline does not match the required 32/32 and 20/20"
+        )
+    result["passed"] = (
+        result["v5"]["overall"]["hit10"] >= 32 and result["v5"]["cohort"]["hit10"] >= 20
+    )
+    return result

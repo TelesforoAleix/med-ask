@@ -1477,7 +1477,10 @@ def extract_book(
                             figure[1],
                             page_number,
                             figure[2].strip(),
-                            {"text_source": "ocr"},
+                            {
+                                "text_source": "ocr",
+                                "rotated": reading.get("rotated", False),
+                            },
                         )
                     )
                     if not figure[2].strip():

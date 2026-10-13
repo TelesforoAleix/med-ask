@@ -320,6 +320,57 @@ def test_successful_search_logs_labels_and_scores(app, monkeypatch):
     ]
 
 
+def test_figure_description_reaches_grade_but_not_browser_log_or_answer(
+    app, monkeypatch
+):
+    import json
+    from dataclasses import replace
+
+    from test_generation import candidate
+
+    database, generation = QuestionMemory(), MagicMock()
+    figure = replace(
+        candidate(),
+        kind="figure",
+        text="Figure 3-12 Invented caption.",
+        figure_label="Figure 3-12",
+        description="Generated synthetic spindle.",
+        found_by_description=True,
+    )
+    monkeypatch.setattr(
+        "med_ask.search", lambda *a, **k: ([figure], "e_v5_synthetic", 0.01)
+    )
+    generation.complete.side_effect = [
+        "yes",
+        '{"sentences":[{"text":"Invented answer.","citations":[1]}]}',
+    ]
+    app.config.update(
+        QUESTION_DATABASE=database,
+        GENERATION_ENDPOINT=generation,
+        EMBEDDING_ENDPOINT=MagicMock(),
+    )
+    client = app.test_client()
+    headers = {"Cf-Access-Authenticated-User-Email": "synthetic@example.invalid"}
+    response = client.post(
+        "/api/search", json={"question": "Synthetic spindle?"}, headers=headers
+    )
+    assert response.status_code == 200
+    item = response.json["evidence"][0]
+    assert item["text"] == figure.text and item["found_by_description"]
+    assert "description" not in item
+    assert figure.description not in response.data.decode()
+    row = database.rows[response.json["question_id"]]
+    assert figure.description not in json.dumps(row)
+    assert figure.description in generation.complete.call_args.args[1][1]["content"]
+    answer = client.post(
+        "/api/answer",
+        json={"question_id": response.json["question_id"]},
+        headers=headers,
+    )
+    assert answer.status_code == 200
+    assert figure.description not in json.dumps(generation.complete.call_args.args[1])
+
+
 @pytest.mark.parametrize("question", [None, "", "   ", "x" * 4001, 23, []])
 def test_search_validates_question_before_logging(app, question):
     app.config["QUESTION_DATABASE"] = QuestionMemory()

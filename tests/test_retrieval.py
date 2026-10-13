@@ -98,6 +98,9 @@ def test_evidence_and_plain_embedding_text():
         text_source="inherited-ocr",
         check_page=False,
         ocr_reasons=[],
+        figure_label=None,
+        description="",
+        found_by_description=False,
     )
     from llama_index.core.schema import MetadataMode
 
@@ -496,6 +499,52 @@ def test_real_question_fields_translation_cache_and_export(tmp_path, real_databa
     assert row["comment"] == "Invented comment"
     assert row["language"] == "ca" and row["ungraded_count"] == 1
     assert row["grades"] == grades and row["answer"] == "Invented answer. [1]"
+
+
+def test_real_v5_figures_resume_and_caption_only_evidence(
+    tmp_path, real_database, monkeypatch
+):
+    from dataclasses import replace
+
+    from med_ask.figures import figure_entries
+
+    monkeypatch.setenv("INDEX_VERSION", "v5")
+    book = make_book(tmp_path)
+    path = tmp_path / "synthetic-figures.pdf"
+    with pymupdf.open() as pdf:
+        page = pdf.new_page()
+        page.insert_text(
+            (72, 130), "Synthetic source passage referring to Figure 3-12."
+        )
+        page.insert_text((72, 250), "Figure 3-12 Synthetic structures in sequence.")
+        pdf.save(path)
+    book = replace(book, path=path, filename=path.name)
+    monkeypatch.setattr(
+        "med_ask.retrieval.figure_entries",
+        lambda source, **kwargs: [
+            replace(f, description="Generated synthetic spindle.")
+            for f in figure_entries(source, tmp_path)
+        ],
+    )
+    endpoint = FakeEndpoint(model="synthetic-" + uuid4().hex)
+    endpoint.purpose = "embed-large-bulk"
+    result = ingest_book(book, endpoint, real_database, output=lambda *a, **k: None)
+    assert result["kinds"]["figure"] == 1
+    assert result["stored"] == result["extracted"]
+    endpoint.purpose = "embed-large"
+    evidence, table, _ = search("Synthetic spindle?", endpoint, real_database)
+    assert table == result["table"]
+    figures = [e for e in evidence if e.kind == "figure"]
+    assert len(figures) == 1
+    assert figures[0].text == "Figure 3-12 Synthetic structures in sequence."
+    assert figures[0].description == "Generated synthetic spindle."
+    assert figures[0].found_by_description
+    endpoint.purpose = "embed-large-bulk"
+    again = ingest_book(book, endpoint, real_database, output=lambda *a, **k: None)
+    assert again["skipped"] == result["stored"]
+    rows = ingest_status([book], real_database)
+    row = next(row for row in rows if row["table"] == table)
+    assert row["stored"] == row["extracted"] == result["stored"]
 
 
 def test_index_version_and_kind_do_not_change_embedding_or_passage_id():
