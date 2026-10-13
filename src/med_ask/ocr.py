@@ -55,8 +55,8 @@ class VisionEndpoint:
             max_retries=0,
         )
 
-    def read(self, png):
-        """1. Send only an in-memory data PNG to the vision purpose, without retries.
+    def read(self, png, hint=None):
+        """1. Send an in-memory PNG and optional owner hint to vision, without retries.
         2. Return the unmodified text, reported identity, and completion reason.
         3. Distinguish page timeouts from outages without endpoint response text.
         """
@@ -67,7 +67,11 @@ class VisionEndpoint:
                     {
                         "role": "user",
                         "content": [
-                            {"type": "text", "text": PROMPT},
+                            {
+                                "type": "text",
+                                "text": PROMPT
+                                + ("\nOwner hint: " + hint if hint else ""),
+                            },
                             {
                                 "type": "image_url",
                                 "image_url": {
@@ -80,7 +84,7 @@ class VisionEndpoint:
                 ],
                 temperature=0,
                 max_tokens=MAX_TOKENS,
-                timeout=180,
+                timeout=20 if hint else 180,
             )
         except APITimeoutError as error:
             raise VisionPageTimeout("page request timed out") from error
@@ -275,10 +279,10 @@ def save_reading(book_id, page, record, root=ROOT):
             temporary.unlink(missing_ok=True)
 
 
-def inspect_book(book, root=ROOT):
+def inspect_book(book, root=ROOT, resolutions_root=None, *, apply_resolutions=True):
     """1. Read PDF provenance and margins, excluding hidden page placeholders.
     2. Substitute the best current-version reading and its margin candidates.
-    3. Apply rules with nearby candidates and return page diagnostics without writes.
+    3. Apply rules, then optionally suppress resolved failures, without writes.
     """
     pages = []
     with pymupdf.open(book.path) as doc:
@@ -325,6 +329,17 @@ def inspect_book(book, root=ROOT):
             neighbours,
             page["finish_reason"],
         )
+    from med_ask.resolutions import load_resolution
+
+    for page in pages:
+        resolution = (
+            load_resolution(book.id, page["pdf_page"], resolutions_root)
+            if apply_resolutions
+            else None
+        )
+        page["resolution"] = resolution
+        if resolution and page["text_source"] != "hidden":
+            page["rules_failed"] = []
     return pages
 
 
@@ -367,7 +382,10 @@ def read_book(book, endpoint, root=ROOT, limit=None, output=print):
                 ink=page["ink"],
             )
             for rotated in (False, True):
-                if any(r["rotated"] == rotated for r in record["readings"]):
+                if any(
+                    r["rotated"] == rotated and not r.get("hinted")
+                    for r in record["readings"]
+                ):
                     continue
                 matrix = pymupdf.Matrix(DPI / 72, DPI / 72).prerotate(
                     180 if rotated else 0
@@ -406,7 +424,7 @@ def read_book(book, endpoint, root=ROOT, limit=None, output=print):
                 )
                 record["readings"].append(reading)
                 best = min(
-                    record["readings"],
+                    [r for r in record["readings"] if not r.get("hinted")],
                     key=lambda r: (
                         r["finish_reason"] == "timeout",
                         len(r["rules_failed"]),
@@ -451,7 +469,7 @@ def recheck_book(book, root=ROOT):
     pages = inspect_book(book, root)
     for page in pages:
         record = page["record"]
-        if not record:
+        if not record or page.get("resolution"):
             continue
         complete = record["complete"] or not needs_rotation(page["rules_failed"])
         if (

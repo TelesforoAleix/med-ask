@@ -790,3 +790,34 @@ The candidate passes only if total Hit@5 does not drop and no question that hit
 before is lost unless another question gains. The command names lost and gained
 questions and exits 0 on pass, 1 on fail, and 2 when it refuses, for example when
 the runs used different `set_version`s.
+
+### Resolve queued pages over the tailnet
+
+Only `app`, with `PRIVATE_ROUTES_ENABLED=true`, registers the resolve API and
+shows **Resolve issues**. The tailnet is the lock; there are no logins or roles.
+`public` returns the ordinary unknown-route 404 for every `/api/private/` path,
+including all methods on the resolve routes. It does not mount originals.
+
+`GET /api/private/resolve/queue` accepts optional `book` and `reason` filters.
+`GET /api/private/resolve/page/<book-id>/<pdf-page>` returns the kept reading,
+printed number and plain-language reasons. The screen shows it beside the
+existing `/api/page/<book-id>/<pdf-page>` image.
+`POST .../resolution` accepts `action: confirm`, `number` with `printed_page`,
+`text` with replacement `text`, or `hinted` with an `attempt_id` from
+`POST .../hint` (which accepts `hint`). Browser writes must have the same origin.
+
+Resolutions live in `/data/originals/resolutions/<book-id>/<pdf-page>.json`.
+Each atomic page file has an append-only `history` of timestamped decisions,
+resolved text and printed numbers. These files can contain book text: never
+copy them into git. Writes are serialized per book across app workers.
+Every later extraction uses the latest resolution, clears the check-page marker,
+and queue inspection omits the resolved page. The index changes **only at the
+next rebuild**. Saving a resolution performs no ingest, embedding or database write.
+
+A hinted reading makes exactly one `vision` request, with the owner hint added
+to the transcription prompt. It has a 20-second timeout and no retry. If vision
+is not serving, the screen says so; the queue and other actions still work.
+The candidate is labelled generated and must be accepted or discarded. Its
+hinted attempt is appended to the kept reading history without replacing the
+selected reading. Discarding dismisses the candidate; the attempt stays in
+history. Accepting writes a resolution. Kept reading text is otherwise untouched.

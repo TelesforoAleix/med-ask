@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import './style.css'
+import { Resolve } from './resolve.jsx'
 import { sourceLabel } from './source-label.js'
 
 async function post(path, body) {
@@ -14,6 +15,11 @@ async function post(path, body) {
 }
 
 function App() {
+  const [privateEnabled, setPrivateEnabled] = useState(false)
+  const [resolving, setResolving] = useState(false)
+  useEffect(() => {
+    fetch('/api/private/ping').then(response => { if (response.ok) setPrivateEnabled(true) }).catch(() => {})
+  }, [])
   const [question, setQuestion] = useState('')
   const [searchedQuestion, setSearchedQuestion] = useState('')
   const [result, setResult] = useState(null)
@@ -120,6 +126,8 @@ function App() {
         <h1>med-ask</h1>
         <p className="intro">Start with a question. Read the original passages.</p>
       </header>
+      {privateEnabled && <button type="button" onClick={() => setResolving(!resolving)}>{resolving ? 'Back to search' : 'Resolve issues'}</button>}
+      {privateEnabled && resolving ? <Resolve /> : <>
       <form onSubmit={submit} role="search">
         <label htmlFor="question">What would you like to understand?</label>
         <div className="search-row">
@@ -187,6 +195,7 @@ function App() {
           <p role="status">{feedbackNote}</p>
         </form>
       </section>}
+      </>}
       {page && <div className="panel-backdrop" onClick={closePage}>
         <aside ref={panel} className="source-panel" role="dialog" aria-modal="true" aria-labelledby="source-title" onClick={event => event.stopPropagation()}>
           <div className="panel-heading">
