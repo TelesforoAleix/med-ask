@@ -713,13 +713,13 @@ def test_reading_heading_overrides_bookmark_and_persists(book, tmp_path, heading
         root,
         book,
         1,
-        "10\n\n" + heading + "\n\nSynthetic Topic\n\nA synthetic exercise paragraph.",
+        "10\n\n" + heading + "\n\nA synthetic exercise paragraph.",
     )
     kept(root, book, 2, "11\n\nAnother synthetic exercise paragraph.")
     kept(root, book, 3, "12\n\nAnother synthetic content paragraph.")
     result = extract_book(book.path, book.id, book.language, ocr_root=root)
     assert [p.kind for p in result.passages] == ["exercise", "exercise", "content"]
-    assert result.passages[0].section_path == ("Summary", heading, "Synthetic Topic")
+    assert result.passages[0].section_path == ("Summary", heading)
     assert result.passages[1].section_path == result.passages[0].section_path
     assert all(heading not in p.text for p in result.passages)
 
@@ -845,3 +845,127 @@ def test_endpoint_distinguishes_timeout_from_outage(monkeypatch, failure, expect
     with pytest.raises(expected):
         fake.read(b"synthetic PNG bytes")
     assert len(calls) == 1
+
+
+def test_chapters_close_kinds_and_outlines_do_not_exclude_without_bookmarks(
+    book, tmp_path
+):
+    with pymupdf.open(book.path) as doc:
+        doc.set_toc([])
+        doc.saveIncr()
+    root = tmp_path / "ocr"
+    kept(
+        root,
+        book,
+        1,
+        "10\n\nCapítulo 1\n\nContenido\n\nA synthetic chapter outline.\n\n"
+        "Problemas\n\nA synthetic exercise paragraph.",
+    )
+    kept(
+        root,
+        book,
+        2,
+        "11\n\nCAPÍTULO 1 Synthetic running title\n\n"
+        "A synthetic exercise continues here.",
+    )
+    kept(
+        root,
+        book,
+        3,
+        "12\n\nCapítulo 2\n\nContenido\n\nA new synthetic chapter begins here.",
+    )
+    result = extract_book(book.path, book.id, book.language, ocr_root=root)
+    assert [p.kind for p in result.passages] == [
+        "content",
+        "exercise",
+        "exercise",
+        "content",
+    ]
+    assert result.passages[-1].section_path == ("Capítulo 2",)
+    assert all("Contenido" not in p.section_path for p in result.passages)
+
+
+def test_book_contents_end_at_chapter_opening_not_contents_entries(book, tmp_path):
+    with pymupdf.open(book.path) as doc:
+        doc.set_toc([])
+        doc.saveIncr()
+    root = tmp_path / "ocr"
+    kept(
+        root,
+        book,
+        1,
+        "10\n\nÍndice\n\nCapítulo 1 Synthetic contents entry 20\n\n"
+        "Summary\n\nA synthetic contents entry.",
+    )
+    kept(
+        root,
+        book,
+        2,
+        "11\n\nCapítulo 1\n\nContenido\n\nA synthetic chapter source paragraph.",
+    )
+    result = extract_book(book.path, book.id, book.language, ocr_root=root)
+    assert [p.pdf_pages for p in result.passages] == [(2, 2)]
+    assert result.passages[0].kind == "content"
+
+
+@pytest.mark.parametrize("boundary", ["New Section", "1.2 A new sentence-case section"])
+def test_peer_reading_heading_closes_summary_on_following_page(
+    book, tmp_path, boundary
+):
+    root = tmp_path / "ocr"
+    kept(root, book, 1, "10\n\nSummary\n\nA synthetic summary paragraph.")
+    kept(root, book, 2, "11\n\n" + boundary + "\n\nA synthetic content paragraph.")
+    kept(root, book, 3, "12\n\nAnother synthetic content paragraph.")
+    result = extract_book(book.path, book.id, book.language, ocr_root=root)
+    assert [p.kind for p in result.passages] == ["summary", "content", "content"]
+
+
+def test_reading_pdf_heading_levels_close_peer_but_keep_subordinate(tmp_path):
+    path = tmp_path / "synthetic.pdf"
+    with pymupdf.open() as doc:
+        page = doc.new_page(width=600, height=800)
+        for y, text, size in [
+            (100, "Summary", 18),
+            (180, "A subordinate heading", 14),
+            (240, "A peer heading", 18),
+            (300, "Synthetic body font establishes the normal font size here.", 10),
+        ]:
+            page.insert_text((40, y), text, fontsize=size)
+        doc.set_toc([[1, "Chapter 1", 1]])
+        doc.save(path)
+    book = Book("synthetic", path.name, "Synthetic book", "English", path)
+    root = tmp_path / "ocr"
+    kept(
+        root,
+        book,
+        1,
+        "10\n\nSummary\n\nA synthetic summary paragraph.\n\n"
+        "A subordinate heading\n\nA synthetic nested summary paragraph.\n\n"
+        "A peer heading\n\nA synthetic content paragraph.",
+    )
+    result = extract_book(book.path, book.id, book.language, ocr_root=root)
+    assert [p.kind for p in result.passages] == ["summary", "summary", "content"]
+    assert result.passages[1].section_path[-2:] == ("Summary", "A subordinate heading")
+
+
+@pytest.mark.parametrize("title", ["Acknowledgments", "Preface", "Agradecimientos"])
+def test_front_matter_heading_ends_coarse_contents_bookmark(book, tmp_path, title):
+    with pymupdf.open(book.path) as doc:
+        doc.set_toc([[1, "Content", 1], [1, "Chapter 1", 3]])
+        doc.saveIncr()
+    root = tmp_path / "ocr"
+    kept(root, book, 1, "10\n\nDetailed Contents\n\nSynthetic excluded contents entry.")
+    kept(root, book, 2, "11\n\n" + title + "\n\nA synthetic front matter paragraph.")
+    kept(root, book, 3, "12\n\nA synthetic chapter paragraph.")
+    result = extract_book(book.path, book.id, book.language, ocr_root=root)
+    assert [p.pdf_pages for p in result.passages] == [(2, 2), (3, 3)]
+    assert result.passages[0].section_path == (title,)
+
+
+def test_reading_chapter_rejects_contents_entries_and_accepts_running_header():
+    from med_ask.extract import reading_chapter
+
+    assert reading_chapter("Capítulo 2") == ("capítulo", 2)
+    assert reading_chapter("CAPÍTULO 2 A synthetic title") == ("capítulo", 2)
+    assert reading_chapter("Capítulo 2 A synthetic title 42") is None
+    assert reading_chapter("CAPÍTULO 2 A SYNTHETIC TITLE 42") is None
