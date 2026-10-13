@@ -353,8 +353,9 @@ def test_search_preserves_ranks_and_attaches_figures(tmp_path, monkeypatch):
 
     store.close = close
     store.get_nodes.return_value = [fnode, foreign_node, fnode]
-    index.as_retriever.return_value.retrieve.return_value = [
-        MagicMock(node=node, score=0.9)
+    index.as_retriever.return_value.retrieve.side_effect = [
+        [MagicMock(node=node, score=0.9)],
+        [],
     ]
     monkeypatch.setattr(
         "med_ask.retrieval.VectorStoreIndex.from_vector_store", lambda *a, **k: index
@@ -366,20 +367,60 @@ def test_search_preserves_ranks_and_attaches_figures(tmp_path, monkeypatch):
     )
     assert [r.id for r in results] == [node.node_id, figure.id]
     assert results[1].text == figure.caption and not results[1].found_by_description
-    assert index.as_retriever.call_args.kwargs["filters"].filters[0].value == [
+    assert index.as_retriever.call_args_list[0].kwargs["filters"].filters[0].value == [
         "content",
         "summary",
         "glossary",
-        "figure",
     ]
+    assert index.as_retriever.call_args.kwargs["filters"].filters[0].value == "figure"
     # A figure returned directly is not appended twice by a linked passage.
-    index.as_retriever.return_value.retrieve.return_value.append(
-        MagicMock(node=fnode, score=0.8)
-    )
+    index.as_retriever.return_value.retrieve.side_effect = [
+        [MagicMock(node=node, score=0.9)],
+        [MagicMock(node=fnode, score=0.99)],
+    ]
     results, _, _ = search(
         "Synthetic question?", FakeEndpoint(), database, lambda *a: store
     )
     assert [r.id for r in results] == [node.node_id, figure.id]
+
+
+def test_separate_search_preserves_passages_and_bounds_both_figure_sources(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("INDEX_VERSION", "v5")
+    figure = figure_entries(extraction(), tmp_path)[0]
+    direct = figure_nodes(
+        [replace(figure, id=f"direct-{i}") for i in range(10)], "Title"
+    )
+    linked = figure_nodes(
+        [replace(figure, id=f"linked-{i}") for i in range(10)], "Title"
+    )
+    passages = passage_nodes([make_passage(i) for i in range(30)], "Title")
+    passages[0].metadata["figures"] = [n.node_id for n in linked] + [direct[0].node_id]
+    store, index, database = MagicMock(), MagicMock(), MagicMock()
+
+    async def close():
+        pass
+
+    store.close = close
+    store.get_nodes.return_value = linked + [direct[0]]
+    index.as_retriever.return_value.retrieve.side_effect = [
+        [MagicMock(node=n, score=0.5) for n in passages],
+        [MagicMock(node=n, score=0.99) for n in direct],
+    ]
+    monkeypatch.setattr(
+        "med_ask.retrieval.VectorStoreIndex.from_vector_store", lambda *a, **k: index
+    )
+    monkeypatch.setattr("med_ask.retrieval.neighbouring_passages", lambda *a: [])
+    database.model.return_value = ("synthetic-v1", 3, True)
+    endpoint = FakeEndpoint()
+    results, _, _ = search(
+        "Synthetic question?", endpoint, database, lambda *a: store, k=30
+    )
+    assert [r.id for r in results[:30]] == [n.node_id for n in passages]
+    assert [r.id for r in results[30:]] == [n.node_id for n in direct[:5] + linked[:5]]
+    assert len(results) == 40 and len({r.id for r in results}) == 40
+    assert len(endpoint.calls) == 1
 
 
 def test_figure_gate_preserves_both_hit10_totals():
