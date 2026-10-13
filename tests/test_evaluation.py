@@ -41,6 +41,7 @@ class Hit:
     book_id: str
     pdf_pages: tuple[int, int]
     score: float
+    kind: str = "content"
 
 
 def page(n, text="ok"):
@@ -105,6 +106,40 @@ def fake_retrieve(answers, calls=None):
 
 def question_of(identity):
     return f"Synthetic secret question {identity}?"
+
+
+def test_eval_scores_passages_only_without_figure_hits_or_displacement(tmp_path):
+    records = [
+        record("q001", evidence("bio-2-en", [page(11)])),
+        record("q002", evidence("bio-2-en", [page(11)])),
+    ]
+    path = write_eval(tmp_path / "eval.jsonl", records)
+    misses = [Hit(f"p{i}", "bio", (1, 1), 0.5) for i in range(9)]
+    figure = Hit("figure", "bio", (11, 11), 0.99, "figure")
+    answers = {
+        question_of("q001"): [figure, *misses, Hit("hit", "bio", (11, 11), 0.4)],
+        question_of("q002"): [*misses, figure],
+    }
+    result = load_run(
+        run_eval(
+            path,
+            tmp_path,
+            BOOKS,
+            fake_retrieve(answers),
+            "embed-large",
+            ["confirmed"],
+            output=lambda *a, **kw: None,
+        )
+    )
+    first, second = result["questions"]
+    assert first["hit10"] and first["first_hit_rank"] == 10
+    assert not second["hit10"]
+    assert all(
+        r["kind"] == "passage" and r["passage"] != "figure"
+        for q in result["questions"]
+        for r in q["results"]
+    )
+    assert result["ranking_scope"] == "passages"
 
 
 def test_hits_on_single_pages_and_ranges_without_tolerance():

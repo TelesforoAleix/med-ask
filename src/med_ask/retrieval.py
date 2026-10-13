@@ -26,6 +26,7 @@ from med_ask.figures import REFERENCE, figure_entries, label_key
 NEIGHBOUR_WORDS = 120
 INDEX_VERSION = "v2"
 SEARCH_KINDS = ("content", "summary", "glossary")
+FIGURE_CANDIDATES = 10
 
 
 class NoIndex(ValueError):
@@ -381,9 +382,10 @@ def ingest_book(book, endpoint, database, store_factory=vector_store, output=pri
 def search(question, endpoint, database, store_factory=vector_store, k=10):
     """1. Embed the question once and select the model's role-aware vector table.
     2. Refuse absent tables or a mismatched recorded model or dimension.
-    3. Filter to content, summary, glossary and, for v5, figures in LlamaIndex.
-    4. Keep original match ranks, then attach missing same-book referenced figures.
-    5. Return source-only evidence text without descriptions or discovery notes.
+    3. Retrieve content, summary and glossary with their original passage ranks.
+    4. For v5, retrieve figures separately using the same question embedding.
+    5. Append at most ten distinct figures, reserving half for passage references.
+    6. Return source-only evidence text without descriptions or discovery notes.
     """
     embedded = embed_query(endpoint, question)
     table = model_table(
@@ -411,12 +413,7 @@ def search(question, endpoint, database, store_factory=vector_store, k=10):
                 filters=[
                     MetadataFilter(
                         key="kind",
-                        value=list(SEARCH_KINDS)
-                        + (
-                            ["figure"]
-                            if os.environ.get("INDEX_VERSION", INDEX_VERSION) == "v5"
-                            else []
-                        ),
+                        value=list(SEARCH_KINDS),
                         operator=FilterOperator.IN,
                     )
                 ]
@@ -426,8 +423,25 @@ def search(question, endpoint, database, store_factory=vector_store, k=10):
             evidence_from_node(m.node, m.score, neighbouring_passages(m.node, store))
             for m in matches
         ]
+        if os.environ.get("INDEX_VERSION", INDEX_VERSION) != "v5":
+            return evidence, table, embedded.seconds
+        figures = index.as_retriever(
+            similarity_top_k=FIGURE_CANDIDATES,
+            filters=MetadataFilters(
+                filters=[MetadataFilter(key="kind", value="figure")]
+            ),
+        ).retrieve(QueryBundle(query_str=question, embedding=embedded.vectors[0]))
         seen = {e.id for e in evidence}
+        figure_count = 0
+        for match in figures[: FIGURE_CANDIDATES // 2]:
+            if match.node.node_id not in seen:
+                evidence.append(evidence_from_node(match.node, match.score))
+                seen.add(match.node.node_id)
+                figure_count += 1
+        # Reserve half the figure budget for references in passage order.
         for match in matches:
+            if figure_count >= FIGURE_CANDIDATES:
+                break
             identities = [
                 identity
                 for identity in match.node.metadata.get("figures", [])
@@ -435,15 +449,30 @@ def search(question, endpoint, database, store_factory=vector_store, k=10):
             ]
             if not identities:
                 continue
-            for node in store.get_nodes(node_ids=identities):
+            linked_nodes = {
+                node.node_id: node for node in store.get_nodes(node_ids=identities)
+            }
+            for identity in identities:
+                if figure_count >= FIGURE_CANDIDATES:
+                    break
+                node = linked_nodes.get(identity)
                 if (
-                    node.node_id in seen
+                    node is None
+                    or node.node_id in seen
                     or node.metadata.get("kind") != "figure"
                     or node.metadata["book_id"] != match.node.metadata["book_id"]
                 ):
                     continue
                 evidence.append(evidence_from_node(node, match.score))
                 seen.add(node.node_id)
+                figure_count += 1
+        for match in figures:
+            if figure_count >= FIGURE_CANDIDATES:
+                break
+            if match.node.node_id not in seen:
+                evidence.append(evidence_from_node(match.node, match.score))
+                seen.add(match.node.node_id)
+                figure_count += 1
         return evidence, table, embedded.seconds
 
 

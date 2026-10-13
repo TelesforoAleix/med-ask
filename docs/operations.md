@@ -746,6 +746,15 @@ supplied by an old caller or stored in node metadata. The evidence column shows
 the printed caption and source location; the “found by its description” note is
 absent. Answers and translations continue to receive captions only.
 
+V5 retrieves passages and figures separately with one question embedding. The
+passage query keeps its existing kind filter, count and similarity order. Figures
+follow all passages and cannot displace a passage: the app requests 30 passages
+and adds at most 10 distinct figures, so it grades at most 40 candidates. The
+first five direct figure matches are followed by same-book passage references;
+unused reference slots are filled by remaining direct matches. Referenced figures
+are deduplicated and kept in passage order. Passarge linking remains title-based;
+legend-to-plate linking is deferred to a later panel extraction slice.
+
 The description job remains available for a later explicitly authorized run.
 It makes one `vision` request with the whole page at 300 DPI plus label and caption,
 writing a generated record under `/data/originals/figures/<book>/<figure-id>.json`.
@@ -800,7 +809,8 @@ Record build counts per book and kind, stored/extracted totals, duplicate-id gap
 and elapsed passages/second. Each current unique id must be stored; a repeated
 prose id accounts for an extracted/stored gap. Ingest resumes missing ids only.
 
-Score both versions through the node's `embed-large`, roles off. Eval text must
+Score through the node's `embed-large`, roles off. Saved v4 numbers can be reused
+when its passage retrieval has not changed. Eval text must
 stay on the node: never print, log, copy, send to the Mac or include it in a PR.
 Result files contain ids, scores, ranks and timings only.
 
@@ -808,10 +818,13 @@ Result files contain ids, scores, ranks and timings only.
 docker compose --profile ingest run -d --name med-ask-fig-score-v4 -e INDEX_VERSION=v4 -e EVAL_RUNS_DIR=/data/originals/eval/fig-work ingest eval --purpose embed-large --no-roles
 # Start after v4 scoring finishes.
 docker compose --profile ingest run -d --name med-ask-fig-score-v5 -e INDEX_VERSION=v5 -e EVAL_RUNS_DIR=/data/originals/eval/fig-work ingest eval --purpose embed-large --no-roles
-docker compose --profile ingest run --name med-ask-fig-gate ingest eval --figure-gate /data/originals/eval/fig-work/<v4-result>.json /data/originals/eval/fig-work/<v5-result>.json --cohort /data/originals/eval/v2-work/scores.json
+docker compose --profile ingest run --name med-ask-fig-gate ingest eval --figure-gate /data/originals/eval/fig-work/<v4-result>.json /data/originals/eval/fig-work/<v5-result>.json --cohort /data/originals/eval/fig-work/cohort.json
 ```
 
-The figure gate reports Hit@5 and Hit@10 overall and for `cohort_ids`. It requires
+Evaluation removes figures before assigning ranks or scoring: the gate counts
+passages only, and reports mark `ranking_scope` as `passages`. Keep the same
+20 `cohort_ids` in `fig-work/cohort.json`; select them by expected books, never by
+outcomes. The figure gate reports Hit@5 and Hit@10 overall and for `cohort_ids`. It requires
 matching 32 scored ids, all 20 cohort ids and the measured v4 baseline of 32/32
 and 20/20 at 10. It passes only if v5 also reaches 32/32 and 20/20 at 10. The
 ordinary eval comparison command still applies its original Hit@5 gate.

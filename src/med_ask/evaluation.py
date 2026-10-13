@@ -298,8 +298,8 @@ def run_eval(
     """1. Load the eval file, setting malformed records aside by id.
     2. Map manifest books to eval books; unmapped eval books count as not indexed.
     3. Warm the endpoint once with fixed text so a cold start is not timed.
-    4. Retrieve each non-retired record with the app's search, keeping ids,
-       ranks, scores and timings only.
+    4. Retrieve each non-retired record with the app's search and score passages
+       only, keeping ids, ranks, scores and timings without question text.
     5. Score selected answerable records; report the rest as skipped with a reason.
     6. Write a result named by purpose and roles and print a short summary.
     """
@@ -326,6 +326,9 @@ def run_eval(
     questions, skipped = [], []
     for record in active:
         results, table, seconds = retrieved(record.id, record.question)
+        results = [
+            item for item in results if getattr(item, "kind", "content") != "figure"
+        ]
         evidence = scoreable_evidence(record, indexed, statuses)
         score = score_results(results, evidence, eval_books)
         flags = score.pop("hits")
@@ -344,6 +347,7 @@ def run_eval(
                     "rank": rank,
                     "passage": item.id,
                     "book_id": item.book_id,
+                    "kind": "passage",
                     "pdf_pages": list(item.pdf_pages),
                     "score": round(item.score, 4),
                     "hit": hit,
@@ -370,6 +374,7 @@ def run_eval(
         "set_version": max(r.set_version for r in records),
         "purpose": purpose,
         "roles": roles,
+        "ranking_scope": "passages",
         "table": table,
         "statuses": sorted(statuses),
         "eval_books": dict(sorted(eval_books.items())),
