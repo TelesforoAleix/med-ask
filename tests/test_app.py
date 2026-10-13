@@ -115,6 +115,10 @@ def test_private_boundary_and_shared_routes(app, monkeypatch, setting):
     else:
         for path in (
             "/api/private/ping",
+            "/api/private/resolve/queue",
+            "/api/private/resolve/page/synthetic/1",
+            "/api/private/resolve/page/synthetic/1/resolution",
+            "/api/private/resolve/page/synthetic/1/hint",
             "/api/private/",
             "/api/private/anything/deeper",
         ):

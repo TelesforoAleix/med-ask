@@ -46,6 +46,9 @@ def create_app() -> Flask:
             return jsonify(error="Unknown API route"), 404
 
     if private_routes_enabled:
+        from med_ask.resolutions import private_api
+
+        app.register_blueprint(private_api())
 
         @app.get("/api/private/ping")
         def private_ping():

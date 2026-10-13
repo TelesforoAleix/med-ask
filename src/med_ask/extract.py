@@ -1244,11 +1244,16 @@ def _positions(
 
 
 def extract_book(
-    pdf_path: str | Path, book_id: str, language: str, *, ocr_root: Path | None = None
+    pdf_path: str | Path,
+    book_id: str,
+    language: str,
+    *,
+    ocr_root: Path | None = None,
+    resolutions_root: Path | None = None,
 ) -> Extraction:
     """1. Read positioned text, margin numbers, bookmarks, and diagnostic labels.
     2. Classify provenance, exclude hidden placeholders, and verify numbering.
-    3. Cut repeated reading tails; separate captions, headings, and failed rules.
+    3. Apply owner resolutions, then separate captions, headings, and failed rules.
     4. Exclude contents/index sections; remove PDF margins and figure labels.
     5. Reassemble PDF fragments, preserving legacy boundaries without readings.
     6. Assign kinds and join passing content sentences across body-free pages.
@@ -1299,16 +1304,42 @@ def extract_book(
         None if source == "hidden" else load_reading(book_id, i + 1, root)
         for i, source in enumerate(sources)
     ]
+    from med_ask.resolutions import apply_resolution, load_resolution
+
+    resolutions = [
+        None
+        if source == "hidden"
+        else load_resolution(book_id, i + 1, resolutions_root)
+        for i, source in enumerate(sources)
+    ]
+    readings = [
+        apply_resolution(r, resolution) if resolution else r
+        for r, resolution in zip(readings, resolutions, strict=True)
+    ]
     original_decisions = _printed_pages(candidates)
     candidates = [
-        reading_candidates(r["text"]) if r else c
-        for r, c in zip(readings, candidates, strict=True)
+        {_number(resolution["printed_page"]): resolution["printed_page"]}
+        if resolution and resolution["printed_page"]
+        else reading_candidates(r["text"])
+        if r
+        else c
+        for r, c, resolution in zip(readings, candidates, resolutions, strict=True)
     ]
     has_readings = any(readings)
     decisions = _printed_pages(candidates)
     decisions = [
         decision if decision[0] else original
         for decision, original in zip(decisions, original_decisions, strict=True)
+    ]
+    decisions = [
+        (
+            resolution["printed_page"],
+            "read" if resolution["printed_page"] else "none",
+            None if resolution["printed_page"] else "no-header-number",
+        )
+        if resolution
+        else decision
+        for resolution, decision in zip(resolutions, decisions, strict=True)
     ]
     page_failures = []
     for i, reading in enumerate(readings):
@@ -1319,14 +1350,18 @@ def extract_book(
                 for offset in (-2, -1, 1, 2)
                 if 0 <= i + offset < len(candidates)
             ]
-            reading["rules_failed"] = failed_rules(
-                reading["text"],
-                language,
-                "ocr",
-                reading["ink"],
-                candidates[i],
-                neighbours,
-                reading["finish_reason"],
+            reading["rules_failed"] = (
+                []
+                if resolutions[i]
+                else failed_rules(
+                    reading["text"],
+                    language,
+                    "ocr",
+                    reading["ink"],
+                    candidates[i],
+                    neighbours,
+                    reading["finish_reason"],
+                )
             )
         neighbours = [
             (offset, candidates[i + offset])
@@ -1398,7 +1433,13 @@ def extract_book(
             reading = readings[index]
             section = tuple(bookmark_path + [title for _, title in heading_path])
             printed, reason = _positions(page_number, page_number, accounts)
-            text = "\n".join(reading_lines(cut_reading_loop(reading["text"])))
+            text = "\n".join(
+                reading_lines(
+                    reading["text"]
+                    if resolutions[index]
+                    else cut_reading_loop(reading["text"])
+                )
+            )
             edge_numbers = reading_candidates(
                 text,
                 [
@@ -1407,6 +1448,8 @@ def extract_book(
                     if 0 <= index + offset < len(candidates)
                 ],
             )
+            if resolutions[index]:
+                edge_numbers = reading_candidates(text)
             lines = text.splitlines()
             nonempty = [i for i, line in enumerate(lines) if line.strip()]
             for position in nonempty[:1] + nonempty[-1:]:

@@ -969,3 +969,23 @@ def test_reading_chapter_rejects_contents_entries_and_accepts_running_header():
     assert reading_chapter("CAPÍTULO 2 A synthetic title") == ("capítulo", 2)
     assert reading_chapter("Capítulo 2 A synthetic title 42") is None
     assert reading_chapter("CAPÍTULO 2 A SYNTHETIC TITLE 42") is None
+
+
+def test_hint_prompt_uses_vision_once_without_changing_normal_prompt(monkeypatch):
+    monkeypatch.setenv("MODEL_BASE_URL", "http://synthetic.invalid/v1")
+    monkeypatch.setenv("MODEL_API_KEY", "unused")
+    endpoint = ocr.VisionEndpoint()
+    endpoint.client = MagicMock()
+    endpoint.read(b"synthetic PNG", hint="Read the lower margin.")
+    call = endpoint.client.chat.completions.create
+    assert call.call_count == 1
+    args = call.call_args.kwargs
+    assert args["model"] == "vision"
+    assert (
+        args["messages"][0]["content"][0]["text"]
+        == ocr.PROMPT + "\nOwner hint: Read the lower margin."
+    )
+    assert args["timeout"] == 20
+    endpoint.read(b"synthetic PNG")
+    assert call.call_args.kwargs["messages"][0]["content"][0]["text"] == ocr.PROMPT
+    assert call.call_args.kwargs["timeout"] == 180

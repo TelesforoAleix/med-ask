@@ -72,3 +72,14 @@ textarea:focus-visible { outline: 3px solid #7aa991; outline-offset: 3px; }
   .passage-pair { grid-template-columns: 1fr; }
   .translation-button { margin: .75rem 0 0; }
 }
+
+.resolve-filters { display: flex; gap: 1rem; flex-wrap: wrap; }
+.resolve-filters select { display: block; max-width: 100%; padding: .5rem; }
+.resolve-queue { display: flex; flex-wrap: wrap; gap: .4rem; max-height: 18rem; overflow: auto; }
+.resolve-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+.resolve-pair > div { min-width: 0; }
+.resolve-image { width: 100%; position: sticky; top: 1rem; }
+.resolve-reading { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; max-height: 32rem; overflow: auto; }
+.resolve-pair fieldset { border: 1px solid #aaa; }
+.resolve-pair form { margin-block: 1rem; }
+@media (max-width: 800px) { .resolve-pair { grid-template-columns: 1fr; } .resolve-image { position: static; } }
