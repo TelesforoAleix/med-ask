@@ -533,24 +533,35 @@ def comparison_lines(result: dict, baseline: dict, candidate: dict) -> list[str]
 
 
 def figure_gate(baseline, candidate, cohort_ids):
-    """1. Require v4 and v5 runs on the same eval set with roles off.
+    """1. Require v4/v5 or v5/v6 passage runs on the same eval set with roles off.
     2. Require the same 32 scored ids and all 20 supplied cohort ids in both runs.
     3. Report Hit@5 and Hit@10 overall and on the cohort without question text.
-    4. Pass only when v5 preserves v4's perfect overall and cohort Hit@10.
+    4. Pass only when the candidate preserves perfect overall and cohort Hit@10.
     """
     cohort = set(cohort_ids)
+    versions = tuple(run["table"].split("_")[1] for run in (baseline, candidate))
     if (
         baseline["set_version"] != 2
         or candidate["set_version"] != 2
-        or not baseline["table"].startswith("e_v4_")
-        or not candidate["table"].startswith("e_v5_")
+        or versions not in {("v4", "v5"), ("v5", "v6")}
+        or any(
+            not run["table"].startswith(f"e_{version}_")
+            for run, version in zip((baseline, candidate), versions, strict=True)
+        )
+        or (
+            versions == ("v5", "v6")
+            and any(
+                run.get("ranking_scope") != "passages" for run in (baseline, candidate)
+            )
+        )
         or any(
             run.get("roles", False) or run["purpose"] != "embed-large"
             for run in (baseline, candidate)
         )
     ):
         raise EvalError(
-            "Figure gate requires v4 and v5, eval v2, embed-large, roles off"
+            "Figure gate requires v4/v5 or v5/v6 passage runs, eval v2, "
+            "embed-large, roles off"
         )
     before = {q["id"] for q in baseline["questions"] if q["scored"]}
     after = {q["id"] for q in candidate["questions"] if q["scored"]}
@@ -572,13 +583,17 @@ def figure_gate(baseline, candidate, cohort_ids):
 
     result = {
         name: {"overall": counts(run, before), "cohort": counts(run, cohort)}
-        for name, run in (("v4", baseline), ("v5", candidate))
+        for name, run in zip(versions, (baseline, candidate), strict=True)
     }
-    if result["v4"]["overall"]["hit10"] != 32 or result["v4"]["cohort"]["hit10"] != 20:
+    before_counts, after_counts = (result[version] for version in versions)
+    if (
+        before_counts["overall"]["hit10"] != 32
+        or before_counts["cohort"]["hit10"] != 20
+    ):
         raise EvalError(
-            "The measured v4 baseline does not match the required 32/32 and 20/20"
+            "The measured baseline does not match the required 32/32 and 20/20"
         )
     result["passed"] = (
-        result["v5"]["overall"]["hit10"] >= 32 and result["v5"]["cohort"]["hit10"] >= 20
+        after_counts["overall"]["hit10"] >= 32 and after_counts["cohort"]["hit10"] >= 20
     )
     return result

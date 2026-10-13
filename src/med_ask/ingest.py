@@ -125,7 +125,7 @@ def main():
     evaluation.add_argument(
         "--compare", nargs=2, metavar=("BASELINE", "CANDIDATE"), help="Result files"
     )
-    evaluation.add_argument("--figure-gate", nargs=2, metavar=("V4", "V5"))
+    evaluation.add_argument("--figure-gate", nargs=2, metavar=("BASELINE", "CANDIDATE"))
     evaluation.add_argument(
         "--cohort", type=Path, help="Private file containing cohort_ids"
     )

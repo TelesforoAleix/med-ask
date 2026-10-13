@@ -27,6 +27,8 @@ from med_ask.ocr import DPI, VisionPageTimeout, VisionUnavailable
 
 ROOT = Path("/data/originals/figures")
 METHOD_VERSION = "figure-page-300dpi-t0-v1"
+PASSARGE_OPENING_LIMIT = 200
+PANEL_HEADING = re.compile(r"^([A-Z])\.\s+")
 PASSARGE_PLATES = tuple(n for n in range(32, 421, 2) if n not in {244, 274}) + tuple(
     range(422, 427)
 )
@@ -64,6 +66,10 @@ class Figure:
     legend_pdf_page: int | None = None
     legend_printed_page: str | None = None
     legend_printed_page_reason: str | None = None
+    panel_letter: str | None = None
+    plate_title: str | None = None
+    panel_text: str = ""
+    legend_regions: tuple = ()
 
 
 def label_key(identifier):
@@ -78,6 +84,7 @@ def figure_entries(
     *,
     pdf_path=None,
     load_descriptions=False,
+    panels=True,
 ):
     """1. Use captions already separated from prose in readings and text layers.
     2. Preserve printed captions and attach verified page accounting.
@@ -115,7 +122,7 @@ def figure_entries(
     if extraction.book_id == "passarge":
         if pdf_path is None:
             raise ValueError("Passarge figure extraction requires its PDF path")
-        entries = passarge_entries(extraction, pdf_path)
+        entries = passarge_entries(extraction, pdf_path, panels=panels)
     if not (load_descriptions or require_records):
         return entries
     loaded = []
@@ -148,7 +155,7 @@ def passarge_title(page):
     return title
 
 
-def passarge_legend(page):
+def passarge_legend_blocks(page):
     """1. Read printed legend blocks from the PDF text layer, without model calls.
     2. Exclude running headers and publisher footers using existing margin bounds.
     3. Use the extractor's column order and line joining to preserve source text.
@@ -163,53 +170,126 @@ def passarge_legend(page):
         ]
         if lines:
             blocks.append(_block(lines, block.source))
-    text = "\n\n".join(block.text for block in _reading_order(blocks, page.rect.width))
+    return _reading_order(blocks, page.rect.width)
+
+
+def passarge_legend(page):
+    """1. Join printed legend blocks in the established column order.
+    2. Refuse an empty legend instead of inventing source text.
+    """
+    text = "\n\n".join(block.text for block in passarge_legend_blocks(page))
     if not text.strip():
         raise ValueError("Passarge plate has no readable printed legend")
     return text
 
 
-def passarge_entries(extraction, pdf_path):
+def passarge_panels(page):
+    """1. Read the atlas's two legend columns from left to right.
+    2. Split at bold letter headings, keeping text and boxes before references.
+    3. Keep opening text at most 200 characters and a third of the panel text.
+    4. Return panels in letter order, refusing repeated letters rather than losing text.
+    5. Leave unlettered plates whole and never call a model.
+    """
+    sections = {None: []}
+    regions = {None: []}
+    current = None
+    blocks = sorted(
+        passarge_legend_blocks(page),
+        key=lambda b: (b.bbox[0] >= page.rect.width / 2, b.bbox[1], b.bbox[0]),
+    )
+    for block in blocks:
+        lines = []
+        for line in block.lines:
+            if (
+                current
+                and line.bold
+                and re.match(r"^(?:References|Further reading)\b", line.text, re.I)
+            ):
+                if lines:
+                    sections[current].append(_join_lines(lines))
+                return _passarge_panel_parts(sections, regions)
+            heading = PANEL_HEADING.match(line.text) if line.bold else None
+            if heading:
+                if lines:
+                    sections[current].append(_join_lines(lines))
+                    lines = []
+                current = heading[1]
+                if current in sections:
+                    raise ValueError("Repeated Passarge panel heading")
+                sections[current], regions[current] = [], []
+            lines.append(line.text)
+            regions[current].append(line.bbox)
+        if lines:
+            sections[current].append(_join_lines(lines))
+    return _passarge_panel_parts(sections, regions)
+
+
+def _passarge_panel_parts(sections, regions):
+    """1. Include only a bounded printed opening in each panel's caption.
+    2. Return printed paragraphs and their positions in letter order.
+    """
+    opening = "\n\n".join(sections[None])
+    result = []
+    for letter in sorted(k for k in sections if k is not None):
+        paragraphs = sections[letter]
+        text = "\n\n".join(paragraphs)
+        caption = text
+        if opening and len(opening) <= min(PASSARGE_OPENING_LIMIT, len(text) // 3):
+            caption = opening + "\n\n" + text
+        result.append((letter, caption, text, tuple(regions[letter])))
+    return result
+
+
+def passarge_entries(extraction, pdf_path, *, panels=True):
     """1. Select only the 193 settled ordinary plates and five chromosome-map pages.
     2. Read printed titles and facing legends; maps share PDF page 421's legend.
-    3. Record plate and legend locations separately with verified printed numbers.
-    4. Hash the source identity and legend text without making description calls.
+    3. Split ordinary plates into panels, leaving unlettered plates and maps whole.
+    4. Record plate and legend locations and hash printed text without model calls.
     """
     entries = []
     with pymupdf.open(pdf_path) as pdf:
         if len(pdf) < max(PASSARGE_PLATES):
             raise ValueError("Passarge PDF does not contain the settled plate pages")
         map_title = passarge_title(pdf[421])
-        for order, number in enumerate(PASSARGE_PLATES, 1):
+        for number in PASSARGE_PLATES:
             legend_number = 421 if number >= 422 else number - 1
             title = map_title if number >= 422 else passarge_title(pdf[number - 1])
-            caption = passarge_legend(pdf[legend_number - 1])
-            identity = [extraction.book_id, number, legend_number, title, caption]
-            digest = hashlib.sha256(
-                json.dumps(identity, ensure_ascii=False).encode()
-            ).hexdigest()
+            legend_page = pdf[legend_number - 1]
+            parts = passarge_panels(legend_page) if panels and number < 422 else []
+            if not parts:
+                parts = [(None, passarge_legend(legend_page), "", ())]
             plate, legend = (
                 extraction.pages[number - 1],
                 extraction.pages[legend_number - 1],
             )
-            entries.append(
-                Figure(
-                    digest,
-                    extraction.book_id,
-                    extraction.language,
-                    title,
-                    str(number),
-                    caption,
-                    number,
-                    plate.printed_page,
-                    plate.reason,
-                    "born-digital",
-                    order,
-                    legend_pdf_page=legend_number,
-                    legend_printed_page=legend.printed_page,
-                    legend_printed_page_reason=legend.reason,
+            for letter, caption, text, regions in parts:
+                label = f"{title} {letter}" if letter else title
+                identity = [extraction.book_id, number, legend_number, label, caption]
+                digest = hashlib.sha256(
+                    json.dumps(identity, ensure_ascii=False).encode()
+                ).hexdigest()
+                entries.append(
+                    Figure(
+                        digest,
+                        extraction.book_id,
+                        extraction.language,
+                        label,
+                        f"{number}{letter or ''}",
+                        caption,
+                        number,
+                        plate.printed_page,
+                        plate.reason,
+                        "born-digital",
+                        len(entries) + 1,
+                        legend_pdf_page=legend_number,
+                        legend_printed_page=legend.printed_page,
+                        legend_printed_page_reason=legend.reason,
+                        panel_letter=letter,
+                        plate_title=title,
+                        panel_text=text,
+                        legend_regions=regions,
+                    )
                 )
-            )
     return entries
 
 

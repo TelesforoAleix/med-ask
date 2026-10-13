@@ -319,12 +319,15 @@ def test_same_book_explicit_references_only(tmp_path):
     )
 
 
-def test_v5_needs_no_descriptions_old_versions_unchanged(tmp_path, monkeypatch):
+@pytest.mark.parametrize("version", ["v5", "v6", "v10"])
+def test_v5_needs_no_descriptions_old_versions_unchanged(
+    tmp_path, monkeypatch, version
+):
     source = extraction()
     source.passages = [make_passage(1)]
     monkeypatch.setenv("INDEX_VERSION", "v4")
     assert len(indexed_nodes(source, "Title")) == 1
-    monkeypatch.setenv("INDEX_VERSION", "v5")
+    monkeypatch.setenv("INDEX_VERSION", version)
     monkeypatch.setattr(
         "med_ask.figures.load_description",
         MagicMock(side_effect=AssertionError("must not read")),
@@ -336,8 +339,9 @@ def test_v5_needs_no_descriptions_old_versions_unchanged(tmp_path, monkeypatch):
     )
 
 
-def test_search_preserves_ranks_and_attaches_figures(tmp_path, monkeypatch):
-    monkeypatch.setenv("INDEX_VERSION", "v5")
+@pytest.mark.parametrize("version", ["v5", "v6", "v10"])
+def test_search_preserves_ranks_and_attaches_figures(tmp_path, monkeypatch, version):
+    monkeypatch.setenv("INDEX_VERSION", version)
     figure = replace(
         figure_entries(extraction(), tmp_path)[0], description="Generated spindle."
     )
@@ -436,24 +440,32 @@ def test_separate_search_preserves_passages_and_bounds_both_figure_sources(
     assert len(endpoint.calls) == 1
 
 
-def test_figure_gate_preserves_both_hit10_totals():
+@pytest.mark.parametrize("versions", [("v4", "v5"), ("v5", "v6")])
+def test_figure_gate_preserves_both_hit10_totals(versions):
     def run(version):
         return {
             "set_version": 2,
             "table": f"e_{version}_synthetic",
             "purpose": "embed-large",
             "roles": False,
+            "ranking_scope": "passages",
             "questions": [
                 dict(id=f"q{n:03}", scored=True, hit5=n < 29, hit10=True)
                 for n in range(32)
             ],
         }
 
-    baseline, candidate = run("v4"), run("v5")
+    baseline, candidate = (run(version) for version in versions)
     cohort = [q["id"] for q in baseline["questions"][:20]]
     result = figure_gate(baseline, candidate, cohort)
-    assert result["passed"] and result["v5"]["overall"] == dict(n=32, hit5=29, hit10=32)
+    assert result["passed"] and result[versions[1]]["overall"] == dict(
+        n=32, hit5=29, hit10=32
+    )
     candidate["questions"][0]["hit10"] = False
     assert not figure_gate(baseline, candidate, cohort)["passed"]
     with pytest.raises(EvalError):
         figure_gate(baseline, candidate, cohort[:-1])
+    if versions == ("v5", "v6"):
+        candidate.pop("ranking_scope")
+        with pytest.raises(EvalError):
+            figure_gate(baseline, candidate, cohort)

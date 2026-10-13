@@ -28,6 +28,60 @@ INDEX_VERSION = "v2"
 SEARCH_KINDS = ("content", "summary", "glossary")
 
 
+def figures_enabled(version=None):
+    """1. Enable printed figures for v5 and every later numeric index version."""
+    version = version or os.environ.get("INDEX_VERSION", INDEX_VERSION)
+    return bool(re.fullmatch(r"v[0-9]{1,4}", version)) and int(version[1:]) >= 5
+
+
+def panels_enabled(version=None):
+    """1. Keep v5's whole plates and enable Passarge panels from v6 onward."""
+    version = version or os.environ.get("INDEX_VERSION", INDEX_VERSION)
+    return figures_enabled(version) and int(version[1:]) >= 6
+
+
+def passarge_links(passage, figures):
+    """1. Select the panels or whole plates located on this passage's legend pages.
+    2. Match paragraph locations to printed panel lines, or compare source text.
+    3. Link one owned panel; otherwise link that plate's panels in letter order.
+    """
+    linked = []
+    pages = sorted(
+        {f.legend_pdf_page for f in figures if f.legend_pdf_page is not None}
+    )
+    for page in pages:
+        if not passage.pdf_pages[0] <= page <= passage.pdf_pages[1]:
+            continue
+        plate = sorted(
+            [f for f in figures if f.legend_pdf_page == page],
+            key=lambda f: (f.pdf_page, f.panel_letter or ""),
+        )
+        locations = [
+            loc["bbox"]
+            for loc in passage.metadata.get("locations", [])
+            if loc["pdf_page"] == page
+        ]
+        owned = []
+        for figure in plate:
+            if not figure.panel_letter:
+                continue
+            if locations:
+                matches = any(
+                    box[0] - 1 <= (line[0] + line[2]) / 2 <= box[2] + 1
+                    and box[1] - 1 <= (line[1] + line[3]) / 2 <= box[3] + 1
+                    for box in locations
+                    for line in figure.legend_regions
+                )
+            else:
+                text = " ".join(passage.text.split())
+                paragraph = " ".join(figure.panel_text.split())
+                matches = bool(text and paragraph and text in paragraph)
+            if matches:
+                owned.append(figure)
+        linked.extend(f.id for f in (owned if len(owned) == 1 else plate))
+    return linked
+
+
 class NoIndex(ValueError):
     def __init__(self, message, table):
         super().__init__(message)
@@ -92,12 +146,14 @@ def passage_id(passage: Passage) -> str:
     return hashlib.sha256(value.encode()).hexdigest()
 
 
-def passage_nodes(passages: list[Passage], title: str, figures=()) -> list[TextNode]:
+def passage_nodes(
+    passages: list[Passage], title: str, figures=(), *, link_panels=True
+) -> list[TextNode]:
     """1. Compute stable ids from the unchanged extracted passages.
     2. Link the immediately adjacent passages only when their sections match.
     3. Remove only NUL characters from text and every nested metadata string.
     4. Exclude all metadata from embedding text so only source text is sent.
-    5. Link explicit figure references only to entries from the same book.
+    5. Link same-book references and Passarge legend paragraphs to their panels.
     """
 
     def remove_nul(value):
@@ -132,10 +188,16 @@ def passage_nodes(passages: list[Passage], title: str, figures=()) -> list[TextN
                 (f.legend_pdf_page is None and label_key(f.identifier) in references)
                 or (
                     f.legend_pdf_page is not None
-                    and f.label.casefold() in passage.text.casefold()
+                    and (f.plate_title or f.label).casefold() in passage.text.casefold()
                 )
             )
         ]
+        if passage.book_id == "passarge" and link_panels:
+            legend_links = passarge_links(
+                passage, [f for f in figures if f.book_id == passage.book_id]
+            )
+            if legend_links:
+                linked = legend_links
         if linked:
             metadata["figures"] = linked
         for name, offset in (("before", -1), ("after", 1)):
@@ -272,17 +334,17 @@ def figure_nodes(figures, title):
 
 def indexed_nodes(extraction, title, pdf_path=None):
     """1. Preserve old versions' passage-only index input.
-    2. For v5, index printed figure labels and captions without kept descriptions.
+    2. From v5, index printed figures; from v6, split Passarge into panels.
     3. Link prose to its same-book figures without changing passage ids or text.
     """
     figures = (
-        figure_entries(extraction, pdf_path=pdf_path)
-        if os.environ.get("INDEX_VERSION", INDEX_VERSION) == "v5"
+        figure_entries(extraction, pdf_path=pdf_path, panels=panels_enabled())
+        if figures_enabled()
         else []
     )
-    return passage_nodes(extraction.passages, title, figures) + figure_nodes(
-        figures, title
-    )
+    return passage_nodes(
+        extraction.passages, title, figures, link_panels=panels_enabled()
+    ) + figure_nodes(figures, title)
 
 
 def neighbouring_passages(node, store) -> list[dict]:
@@ -312,7 +374,7 @@ def neighbouring_passages(node, store) -> list[dict]:
 
 
 def ingest_book(book, endpoint, database, store_factory=vector_store, output=print):
-    """1. Extract passages and, for v5, printed figure labels and captions.
+    """1. Extract passages and, from v5 onward, printed figure labels and captions.
     2. Probe the endpoint's model and dimensions and select its table.
     3. Ask LlamaIndex which stable passage ids are already stored.
     4. Insert only missing passages through LlamaIndex, committing each passage.
@@ -382,7 +444,7 @@ def search(question, endpoint, database, store_factory=vector_store, k=10):
     """1. Embed the question once and select the model's role-aware vector table.
     2. Refuse absent tables or a mismatched recorded model or dimension.
     3. Retrieve content, summary and glossary with their original passage ranks.
-    4. For v5, retrieve figures separately using the same question embedding.
+    4. From v5 onward, retrieve figures separately using the same embedding.
     5. Append up to the configured four figures, reserving half for references.
     6. Return source-only evidence text without descriptions or discovery notes.
     """
@@ -422,7 +484,7 @@ def search(question, endpoint, database, store_factory=vector_store, k=10):
             evidence_from_node(m.node, m.score, neighbouring_passages(m.node, store))
             for m in matches
         ]
-        if os.environ.get("INDEX_VERSION", INDEX_VERSION) != "v5":
+        if not figures_enabled():
             return evidence, table, embedded.seconds
         figure_limit = int(os.environ.get("FIGURE_CANDIDATES", "4"))
         figures = index.as_retriever(
@@ -479,7 +541,7 @@ def search(question, endpoint, database, store_factory=vector_store, k=10):
 def ingest_status(books, database, store_factory=vector_store):
     """1. Extract each selected book to count current passages and hidden pages.
     2. Read each recorded model through LlamaIndex's metadata filters.
-    3. Include figure identities when checking v5, preserving other versions.
+    3. Include whole plates for v5 and panel identities from v6 onward.
     4. Report stored current ids, extracted counts and duplicate gaps per book.
     """
     models = database.models()
@@ -489,10 +551,14 @@ def ingest_status(books, database, store_factory=vector_store):
         passages = extraction.passages
         hidden = sum(page.text_source == "hidden" for page in extraction.pages)
         for table, model, dimensions in models:
+            match = re.match(r"e_(v[0-9]{1,4})(?:r)?_", table)
+            version = match[1] if match else "v0"
             identities = {passage_id(p) for p in passages}
             figures = (
-                figure_entries(extraction, pdf_path=book.path)
-                if table.startswith("e_v5_")
+                figure_entries(
+                    extraction, pdf_path=book.path, panels=panels_enabled(version)
+                )
+                if figures_enabled(version)
                 else []
             )
             identities.update(f.id for f in figures)
