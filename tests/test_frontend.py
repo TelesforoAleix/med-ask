@@ -12,12 +12,19 @@ def test_screen_source_label():
             "--input-type=module",
             "-e",
             f"""import assert from 'node:assert/strict';
-            import {{ sourceLabel }} from '{module}';
+            import {{ sourceLabel, reviewLocation }} from '{module}';
             const label = 'Synthetic book: pdf page 1';
             for (const kind of ['summary', 'glossary'])
               assert.equal(sourceLabel({{label, kind}}), `${{label}} · ${{kind}}`);
             assert.equal(sourceLabel({{label, kind: 'content'}}), label);
             assert.equal(sourceLabel({{label}}), label);
+            const plate = {{book_id: 'passarge', label: 'Caption: pdf page 31',
+              pdf_pages: [31,31], figure_pdf_page: 32, figure_printed_page: '21'}};
+            assert.deepEqual(reviewLocation(plate), {{pdf_pages: [32,32],
+              label: 'passarge: pdf page 32 <print page: 21>'}});
+            assert.equal(sourceLabel(plate), plate.label);
+            assert.deepEqual(reviewLocation({{label, pdf_pages: [1,2]}}),
+              {{label, pdf_pages: [1,2]}});
             assert.equal(sourceLabel({{label, text_source: 'ocr'}}),
               `${{label}} · from OCR`);
             for (const metadata of [{{check_page: true}}, {{inherited_ocr: true}}])
@@ -99,12 +106,15 @@ def test_figure_heading_renders_discovery_note_without_description():
         const { renderToStaticMarkup } = await import('react-dom/server');
         const item = {kind: 'figure', figure_label: 'Figura 3-12',
           number: 2, language: 'Spanish', found_by_description: true,
+          pdf_pages: [31,31], figure_pdf_page: 32,
           description: 'Hidden generated synthetic spindle.'};
         const render = value => renderToStaticMarkup(
           React.createElement(component.EvidenceHeading, {item: value}));
         const html = render(item);
         assert.ok(html.includes('Figura 3-12 [2]'));
         assert.ok(html.includes('Printed caption'));
+        assert.ok(html.includes('Plate: PDF page 32'));
+        assert.ok(html.includes('Caption cited from PDF page 31'));
         assert.ok(html.includes('Found by its description'));
         assert.ok(!html.includes(item.description));
         assert.ok(!render({...item, found_by_description: false})

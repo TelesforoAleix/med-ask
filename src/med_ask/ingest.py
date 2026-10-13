@@ -165,7 +165,9 @@ def main():
         rows = []
         endpoint = VisionEndpoint() if args.command == "figures-describe" else None
         for book in selected:
-            figures = figure_entries(extract_book(book.path, book.id, book.language))
+            figures = figure_entries(
+                extract_book(book.path, book.id, book.language), pdf_path=book.path
+            )
             if endpoint:
                 try:
                     rows.append(

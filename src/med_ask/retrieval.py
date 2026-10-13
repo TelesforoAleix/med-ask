@@ -61,6 +61,9 @@ class Evidence:
     figure_label: str | None = None
     description: str = ""
     found_by_description: bool = False
+    figure_pdf_page: int | None = None
+    figure_printed_page: str | None = None
+    figure_printed_page_reason: str | None = None
 
 
 def model_table(model: str, roles=False, purpose="embed") -> str:
@@ -124,7 +127,14 @@ def passage_nodes(passages: list[Passage], title: str, figures=()) -> list[TextN
         linked = [
             f.id
             for f in figures
-            if f.book_id == passage.book_id and label_key(f.identifier) in references
+            if f.book_id == passage.book_id
+            and (
+                (f.legend_pdf_page is None and label_key(f.identifier) in references)
+                or (
+                    f.legend_pdf_page is not None
+                    and f.label.casefold() in passage.text.casefold()
+                )
+            )
         ]
         if linked:
             metadata["figures"] = linked
@@ -209,22 +219,36 @@ def evidence_from_node(node, score=None, neighbours=None) -> Evidence:
         ocr_reasons=m.get("ocr_reasons", []),
         figure_label=m.get("figure_label"),
         description=m.get("description", ""),
+        figure_pdf_page=m.get("figure_pdf_page"),
+        figure_printed_page=m.get("figure_printed_page"),
+        figure_printed_page_reason=m.get("figure_printed_page_reason"),
     )
 
 
 def figure_nodes(figures, title):
-    """1. Adapt figure source pages and captions to ordinary evidence metadata.
+    """1. Cite the legend page when a figure's caption is printed separately.
     2. Embed the printed caption plus its separately labelled generated description.
     3. Keep the caption separately so answer and evidence text stay source-only.
     """
     nodes = []
     for figure in figures:
+        page = figure.legend_pdf_page or figure.pdf_page
+        printed = (
+            figure.legend_printed_page
+            if figure.legend_pdf_page
+            else figure.printed_page
+        )
+        reason = (
+            figure.legend_printed_page_reason
+            if figure.legend_pdf_page
+            else figure.printed_page_reason
+        )
         passage = Passage(
             figure.book_id,
             figure.language,
-            (figure.pdf_page, figure.pdf_page),
-            (figure.printed_page, figure.printed_page) if figure.printed_page else None,
-            figure.printed_page_reason,
+            (page, page),
+            (printed, printed) if printed else None,
+            reason,
             (),
             figure.order,
             figure.caption,
@@ -238,6 +262,9 @@ def figure_nodes(figures, title):
             description=figure.description.replace("\x00", ""),
             text_source=figure.text_source,
             passage_hash=figure.id,
+            figure_pdf_page=figure.pdf_page,
+            figure_printed_page=figure.printed_page,
+            figure_printed_page_reason=figure.printed_page_reason,
         )
         node.text = node.metadata["caption"]
         if figure.description:
@@ -261,13 +288,13 @@ def description_match(question, evidence):
     return bool(words(question) & (words(evidence.description) - words(evidence.text)))
 
 
-def indexed_nodes(extraction, title):
+def indexed_nodes(extraction, title, pdf_path=None):
     """1. Preserve old versions' passage-only index input.
     2. For v5, read all kept figure outcomes and index captions and descriptions.
     3. Link prose to its same-book figures without changing passage ids or text.
     """
     figures = (
-        figure_entries(extraction, require_records=True)
+        figure_entries(extraction, require_records=True, pdf_path=pdf_path)
         if os.environ.get("INDEX_VERSION", INDEX_VERSION) == "v5"
         else []
     )
@@ -311,7 +338,7 @@ def ingest_book(book, endpoint, database, store_factory=vector_store, output=pri
     """
     started = perf_counter()
     extraction = extract_book(book.path, book.id, book.language)
-    nodes = indexed_nodes(extraction, book.title)
+    nodes = indexed_nodes(extraction, book.title, book.path)
     probe = embed_query(endpoint, "index dimension probe")
     dimensions = len(probe.vectors[0])
     table = model_table(
@@ -458,7 +485,11 @@ def ingest_status(books, database, store_factory=vector_store):
         hidden = sum(page.text_source == "hidden" for page in extraction.pages)
         for table, model, dimensions in models:
             identities = {passage_id(p) for p in passages}
-            figures = figure_entries(extraction) if table.startswith("e_v5_") else []
+            figures = (
+                figure_entries(extraction, pdf_path=book.path)
+                if table.startswith("e_v5_")
+                else []
+            )
             identities.update(f.id for f in figures)
             record = database.model(table)
             nodes = []

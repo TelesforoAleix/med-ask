@@ -720,6 +720,24 @@ They preserve the caption, label, book, PDF page and verified printed page. Stab
 ids include source identity and occurrence, so unnumbered figures on one page
 stay separate. Opening a figure uses **Review source**, showing the whole page.
 
+Passarge uses the settled atlas rule instead of numbered captions: one entry for
+each of the 198 plate pages, comprising the 193 even PDF pages 32–420 except
+244 and 274, plus PDF pages 422–426. Introduction illustrations on PDF 15–18
+are excluded. The label is the printed plate title, and the caption is the
+facing legend's printed text, read in column order with running margins removed.
+The five chromosome-map pages share the printed title from PDF 422 and the
+legend on PDF 421. This rule is specific to the selected edition; a missing
+plate title, legend or settled page range refuses extraction.
+
+Passarge records keep both locations: `pdf_page` is the plate and
+`legend_pdf_page` is the caption source, with independently verified printed
+pages for each. Descriptions always render the plate. Figure evidence uses the
+legend's PDF and printed page for citation and evaluation; separate
+`figure_pdf_page` metadata makes Review source open the plate. The screen names
+both locations. A passage mentioning a plate's printed title brings matching
+plates from that book. Other books retain their existing stable figure ids and
+kept descriptions, and ordinary same-page figures behave as before.
+
 Descriptions are generated discovery text, never printed evidence. One `vision`
 request receives the whole page at 300 DPI plus the figure label and caption.
 It describes only visible structures, steps and labels in the caption's language.

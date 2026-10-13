@@ -101,6 +101,9 @@ def test_evidence_and_plain_embedding_text():
         figure_label=None,
         description="",
         found_by_description=False,
+        figure_pdf_page=None,
+        figure_printed_page=None,
+        figure_printed_page_reason=None,
     )
     from llama_index.core.schema import MetadataMode
 
