@@ -748,9 +748,12 @@ absent. Answers and translations continue to receive captions only.
 
 V5 retrieves passages and figures separately with one question embedding. The
 passage query keeps its existing kind filter, count and similarity order. Figures
-follow all passages and cannot displace a passage: the app requests 30 passages
-and adds at most 10 distinct figures, so it grades at most 40 candidates. The
-first five direct figure matches are followed by same-book passage references;
+follow all passages and cannot displace a passage: the app requests 26 passages
+and adds at most 4 distinct figures, so it grades at most 30 candidates. Container
+environment variables `PASSAGE_CANDIDATES` (default 26) and `FIGURE_CANDIDATES`
+(default 4) override these caps; the passage cap must stay at least 10 to retain
+the measured gate. The first half of the figure slots (two by default) go to direct
+figure matches, followed by same-book passage references;
 unused reference slots are filled by remaining direct matches. Referenced figures
 are deduplicated and kept in passage order. Passarge linking remains title-based;
 legend-to-plate linking is deferred to a later panel extraction slice.

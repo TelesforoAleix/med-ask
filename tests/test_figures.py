@@ -384,10 +384,15 @@ def test_search_preserves_ranks_and_attaches_figures(tmp_path, monkeypatch):
     assert [r.id for r in results] == [node.node_id, figure.id]
 
 
+@pytest.mark.parametrize("figure_limit", [4, 6])
 def test_separate_search_preserves_passages_and_bounds_both_figure_sources(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, figure_limit
 ):
     monkeypatch.setenv("INDEX_VERSION", "v5")
+    if figure_limit == 4:
+        monkeypatch.delenv("FIGURE_CANDIDATES", raising=False)
+    else:
+        monkeypatch.setenv("FIGURE_CANDIDATES", str(figure_limit))
     figure = figure_entries(extraction(), tmp_path)[0]
     direct = figure_nodes(
         [replace(figure, id=f"direct-{i}") for i in range(10)], "Title"
@@ -395,7 +400,7 @@ def test_separate_search_preserves_passages_and_bounds_both_figure_sources(
     linked = figure_nodes(
         [replace(figure, id=f"linked-{i}") for i in range(10)], "Title"
     )
-    passages = passage_nodes([make_passage(i) for i in range(30)], "Title")
+    passages = passage_nodes([make_passage(i) for i in range(26)], "Title")
     passages[0].metadata["figures"] = [n.node_id for n in linked] + [direct[0].node_id]
     store, index, database = MagicMock(), MagicMock(), MagicMock()
 
@@ -415,11 +420,19 @@ def test_separate_search_preserves_passages_and_bounds_both_figure_sources(
     database.model.return_value = ("synthetic-v1", 3, True)
     endpoint = FakeEndpoint()
     results, _, _ = search(
-        "Synthetic question?", endpoint, database, lambda *a: store, k=30
+        "Synthetic question?", endpoint, database, lambda *a: store, k=26
     )
-    assert [r.id for r in results[:30]] == [n.node_id for n in passages]
-    assert [r.id for r in results[30:]] == [n.node_id for n in direct[:5] + linked[:5]]
-    assert len(results) == 40 and len({r.id for r in results}) == 40
+    half = figure_limit // 2
+    assert [r.id for r in results[:26]] == [n.node_id for n in passages]
+    assert [r.id for r in results[26:]] == [
+        n.node_id for n in direct[:half] + linked[:half]
+    ]
+    assert len(results) == 26 + figure_limit
+    assert len({r.id for r in results}) == len(results)
+    assert index.as_retriever.call_args_list[0].kwargs["similarity_top_k"] == 26
+    assert (
+        index.as_retriever.call_args_list[1].kwargs["similarity_top_k"] == figure_limit
+    )
     assert len(endpoint.calls) == 1
 
 

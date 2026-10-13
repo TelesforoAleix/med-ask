@@ -410,6 +410,18 @@ def graded_app(app, monkeypatch):
     return app, database, generation, calls
 
 
+def test_passage_candidate_cap_can_be_configured(graded_app, monkeypatch):
+    app, _, _, calls = graded_app
+    monkeypatch.setenv("PASSAGE_CANDIDATES", "20")
+    response = app.test_client().post(
+        "/api/search",
+        json={"question": "Synthetic configured cap?"},
+        headers={"Cf-Access-Authenticated-User-Email": "synthetic@example.invalid"},
+    )
+    assert response.status_code == 200
+    assert calls == [{"k": 20}]
+
+
 def test_evidence_then_separate_answer_translation_and_ownership(graded_app):
     app, database, generation, calls = graded_app
     client = app.test_client()
@@ -420,7 +432,7 @@ def test_evidence_then_separate_answer_translation_and_ownership(graded_app):
         headers=headers,
     ).json
     identity = data["question_id"]
-    assert calls == [{"k": 30}]
+    assert calls == [{"k": 26}]
     assert data["language"] == "en" and not data["not_found"]
     assert data["evidence"][0]["translation_available"]
     assert not data["evidence"][1]["translation_available"]
