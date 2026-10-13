@@ -349,6 +349,7 @@ The inspectable thresholds in `ocr.py` are:
 | `number-missing` | No whole decimal or Roman number (either case) in a reading's first or last non-watermark line, or an inherited text layer's margins |
 | `number-order` | A printed number conflicts with nearby numbers of the same numbering family, within two PDF pages |
 | `token-limit` | A vision reply finishes with `length` |
+| `page-timeout` | A page request exceeds the 180-second timeout |
 
 The ink test renders the inner page (excluding 2% at each edge) at 72 DPI in
 memory; more than 0.1% of its grayscale pixels must be darker than intensity 180.
@@ -376,8 +377,12 @@ PDF pages, short reason codes and counts, including pages awaiting a first readi
 It reports hidden / kept / read and passing / queued totals, word-shape quantiles,
 seconds for completed calls, rotation retries and rescues. It sends nothing elsewhere.
 An upright reading gets one retry rotated 180 degrees only for `empty-ink` or
-`nonwords`. Number, language and token-limit failures alone queue it without a
-retry. Fewer failed rules wins, with upright winning ties. Both replies remain intact.
+`nonwords` or `page-timeout`. A timeout is saved as an empty failed attempt with
+`finish_reason: timeout`, then gets at most one retry; after two timeouts the
+page stays queued and the run continues. A completed reply wins over a timed-out
+attempt; completed replies otherwise use the fewest failed rules, upright on ties.
+Number, language and token-limit failures alone queue it without a
+retry. Both replies remain intact.
 Roman numerals in either case use their usual ordering. A whole integer or Roman
 token beside text at the start or end of an edge line counts when neighbouring
 pages support its sequence. Decimal figure and section numbers do not count.
@@ -402,6 +407,7 @@ prompt, DPI and settings and must change when any of them changes. Older-version
 records are retained inside the replacement file. Current-version attempts are
 never repeated, even for queued pages. If interrupted after an upright reply,
 resume performs only its pending rotation if the amended retry rules require it.
+A page timeout is a durable failed reading, not an outage.
 An HTTP 500 or lost connection stops
 cleanly with exit code 3: no failed call is marked as a reading. Run the same command
 again to continue. An already completed reply stays durable if its retry is offline.
@@ -409,9 +415,16 @@ again to continue. An already completed reply stays durable if its retry is offl
 Extraction without current readings preserves the existing paragraphs and counts.
 With readings it uses blank-line blocks as paragraphs, drops the watermark line
 `Copyrighted material`, and stores figure markers and their captions separately.
-A vocabulary heading starts a section of its kind; otherwise a reading uses the
-bookmark path. Its first or last line supplies a printed number only when the
-sequence supports it; the existing numbering inference remains the fallback.
+Readings apply the same contents/index title exclusion as PDF text. Exact kind
+headings (including spaced letters) override bookmark kinds and persist until
+another heading or bookmark changes the section. Short uppercase or title-case
+lines (at most 14 words and 120 characters, without sentence/list punctuation)
+become subordinate headings. Ordinary prose remains source text. Sustained
+repetition of a 1–64-token pattern (at least eight copies, 64 tokens and 200
+characters), or 200 copies of a horizontal whitespace character, cuts the tail
+at its first occurrence when passages are built. Saved readings are untouched;
+the original failures and queued-page marker remain on the retained prefix. The
+first or last line supplies a printed number only when the sequence supports it; the existing numbering inference remains the fallback.
 Passing OCR paragraphs can join across pages. Queued pages and inherited OCR in
 a book being rebuilt from readings cannot. Every passage records `born-digital`,
 `inherited-ocr` or `ocr`; queued passages retain their reasons and are indexed
@@ -512,6 +525,44 @@ docker rm med-ask-v3-compare
 Report only Hit@5, Hit@10 and lost/gained ids from the eval and comparison. The
 scoring and gate remain unchanged. Restore `INDEX_VERSION=v2` and restart to
 select the preserved pre-OCR tables if the owner requests index rollback.
+
+### v4 correction and Mac bulk ingest
+
+Keep the app on `v2` with `embed-large`, roles off, until the correction gate
+passes. Preserve the `v2` and `v3` tables and all kept reading files; do not run
+`ocr` or `ocr-recheck` for this rebuild. Before embedding, extract all four books
+in memory and review counts by book, kind and text source against both existing
+indexes. Report excluded page ranges, shortened passages and largest passage
+lengths under `/data/originals/eval/v4-work/`. Stop for review before starting
+the bulk route.
+
+With the owner's Mac bulk server serving, probe `embed-large-bulk` and
+`embed-large` once each and require identical reported identity, dimensions
+(2,560) and `model_table` names under `INDEX_VERSION=v4`. Stop on any mismatch.
+The bulk purpose has no fallback; it is for ingestion only. Give its client a
+300-second timeout. Questions and eval continue through `embed-large`.
+
+Run all four books sequentially in one retained detached container:
+
+```sh
+docker compose --profile ingest run -d --name med-ask-v4-build -e INDEX_VERSION=v4 -e EMBEDDING_PURPOSE=embed-large-bulk -e EMBEDDING_ROLES=false -e EMBEDDING_TIMEOUT=300 ingest ingest alberts mathews passarge stryer
+# Wait for the exit notification; do not poll. Read the final log once.
+docker logs med-ask-v4-build
+```
+
+Record stored/extracted counts, duplicate-id gaps and elapsed rate. Long node
+steps use retained detached containers named `med-ask-v4-<step>` and results in
+`/data/originals/eval/v4-work/` or their log. Score `v2`, `v3` and `v4` through
+`embed-large` on `med-ask-eval.v2.jsonl` (the new default; v1 remains untouched),
+recording Hit@5 and Hit@10 overall and on the 20-question three-book cohort,
+plus changed ids q001–q032. Never print question text.
+
+Switch only if `v4` reaches Hit@5 at least 29/32 overall and 18/20 on that
+cohort. Otherwise keep the app on `v2`. Before switching, record the rollback:
+set only `INDEX_VERSION=v2` in the server's private `.env` without displaying
+its contents, then `sudo systemctl restart med-ask.service`. On pass set only
+`INDEX_VERSION=v4`, restart, check health and a Spanish Stryer probe on the node.
+The app's embedding purpose remains `embed-large`, roles off.
 
 ### Embedding comparison arms
 
@@ -655,7 +706,7 @@ on the server to run the updated command from the clone.
 
 The eval set measures how often search returns the pages that hold the evidence,
 per embedding model, and how fast a question is embedded. It is private and lives
-outside git at `/data/originals/eval/med-ask-eval.v1.jsonl` in `ingest`
+outside git at `/data/originals/eval/med-ask-eval.v2.jsonl` in `ingest`
 (`/srv/homelab/med-ask-data/originals/eval/` on the server). Never copy it, print
 its questions, or put any part of it in tests or the repository. `EVAL_FILE`
 overrides the path and `EVAL_RUNS_DIR` the results directory.
