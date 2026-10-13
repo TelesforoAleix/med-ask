@@ -14,11 +14,22 @@ from time import perf_counter
 
 import pymupdf
 
-from med_ask.extract import CAPTION, _external_output
+from med_ask.extract import (
+    CAPTION,
+    _block,
+    _external_output,
+    _join_lines,
+    _number,
+    _read_blocks,
+    _reading_order,
+)
 from med_ask.ocr import DPI, VisionPageTimeout, VisionUnavailable
 
 ROOT = Path("/data/originals/figures")
 METHOD_VERSION = "figure-page-300dpi-t0-v1"
+PASSARGE_PLATES = tuple(n for n in range(32, 421, 2) if n not in {244, 274}) + tuple(
+    range(422, 427)
+)
 REFERENCE = re.compile(
     r"\b(?:fig(?:ure|ura)?s?\.?)\s*"
     r"([A-Za-z]?\d+(?:[.\-–—]\d+)*(?:[A-Za-z])?)\b",
@@ -50,6 +61,9 @@ class Figure:
     order: int
     rotated: bool = False
     description: str = ""
+    legend_pdf_page: int | None = None
+    legend_printed_page: str | None = None
+    legend_printed_page_reason: str | None = None
 
 
 def label_key(identifier):
@@ -57,11 +71,12 @@ def label_key(identifier):
     return re.sub(r"[–—]", "-", identifier.casefold())
 
 
-def figure_entries(extraction, root=ROOT, require_records=False):
+def figure_entries(extraction, root=ROOT, require_records=False, *, pdf_path=None):
     """1. Use captions already separated from prose in readings and text layers.
     2. Preserve printed captions and attach verified page accounting.
     3. Give repeated or unnumbered figures separate stable source identities.
-    4. Load kept descriptions without calls; optionally require terminal records.
+    4. For Passarge, use the settled plate pages and facing printed legends.
+    5. Load kept descriptions without calls; optionally require terminal records.
     """
     entries, occurrences = [], Counter()
     for order, caption in enumerate(extraction.captions, 1):
@@ -89,6 +104,13 @@ def figure_entries(extraction, root=ROOT, require_records=False):
             order,
             rotated=caption.metadata.get("rotated", False),
         )
+        entries.append(entry)
+    if extraction.book_id == "passarge":
+        if pdf_path is None:
+            raise ValueError("Passarge figure extraction requires its PDF path")
+        entries = passarge_entries(extraction, pdf_path)
+    loaded = []
+    for entry in entries:
         record = load_description(entry, root)
         if require_records and record is None:
             raise ValueError(
@@ -96,7 +118,89 @@ def figure_entries(extraction, root=ROOT, require_records=False):
             )
         if record and record["status"] == "described":
             entry = Figure(**{**asdict(entry), "description": record["description"]})
-        entries.append(entry)
+        loaded.append(entry)
+    return loaded
+
+
+def passarge_title(page):
+    """1. Read the plate's printed running title from the header text layer.
+    2. Remove standalone printed numbers, preserving title wording and case.
+    3. Refuse a missing title instead of generating one from visual contents.
+    """
+    lines = [
+        line.text
+        for block in _read_blocks(page)
+        for line in block.lines
+        if line.bbox[3] <= page.rect.height * 0.075 and not _number(line.text.strip())
+    ]
+    title = _join_lines(lines)
+    if not title:
+        raise ValueError("Passarge plate has no readable printed title")
+    return title
+
+
+def passarge_legend(page):
+    """1. Read printed legend blocks from the PDF text layer, without model calls.
+    2. Exclude running headers and publisher footers using existing margin bounds.
+    3. Use the extractor's column order and line joining to preserve source text.
+    """
+    blocks = []
+    for block in _read_blocks(page):
+        lines = [
+            line
+            for line in block.lines
+            if line.bbox[1] >= page.rect.height * 0.075
+            and line.bbox[3] <= page.rect.height * 0.945
+        ]
+        if lines:
+            blocks.append(_block(lines, block.source))
+    text = "\n\n".join(block.text for block in _reading_order(blocks, page.rect.width))
+    if not text.strip():
+        raise ValueError("Passarge plate has no readable printed legend")
+    return text
+
+
+def passarge_entries(extraction, pdf_path):
+    """1. Select only the 193 settled ordinary plates and five chromosome-map pages.
+    2. Read printed titles and facing legends; maps share PDF page 421's legend.
+    3. Record plate and legend locations separately with verified printed numbers.
+    4. Hash the source identity and legend text without making description calls.
+    """
+    entries = []
+    with pymupdf.open(pdf_path) as pdf:
+        if len(pdf) < max(PASSARGE_PLATES):
+            raise ValueError("Passarge PDF does not contain the settled plate pages")
+        map_title = passarge_title(pdf[421])
+        for order, number in enumerate(PASSARGE_PLATES, 1):
+            legend_number = 421 if number >= 422 else number - 1
+            title = map_title if number >= 422 else passarge_title(pdf[number - 1])
+            caption = passarge_legend(pdf[legend_number - 1])
+            identity = [extraction.book_id, number, legend_number, title, caption]
+            digest = hashlib.sha256(
+                json.dumps(identity, ensure_ascii=False).encode()
+            ).hexdigest()
+            plate, legend = (
+                extraction.pages[number - 1],
+                extraction.pages[legend_number - 1],
+            )
+            entries.append(
+                Figure(
+                    digest,
+                    extraction.book_id,
+                    extraction.language,
+                    title,
+                    str(number),
+                    caption,
+                    number,
+                    plate.printed_page,
+                    plate.reason,
+                    "born-digital",
+                    order,
+                    legend_pdf_page=legend_number,
+                    legend_printed_page=legend.printed_page,
+                    legend_printed_page_reason=legend.reason,
+                )
+            )
     return entries
 
 

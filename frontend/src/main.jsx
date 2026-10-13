@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import './style.css'
 import { Resolve } from './resolve.jsx'
-import { sourceLabel } from './source-label.js'
+import { sourceLabel, reviewLocation } from './source-label.js'
 import { EvidenceHeading } from './evidence-heading.jsx'
 
 async function post(path, body) {
@@ -117,7 +117,8 @@ function App() {
   function review(item, event) {
     reviewButton.current = event.currentTarget
     setImageError(false)
-    setPage({ ...item, number: item.pdf_pages[0] })
+    const location = reviewLocation(item)
+    setPage({ ...item, ...location, number: location.pdf_pages[0] })
   }
 
   return (
