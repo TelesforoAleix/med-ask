@@ -6,7 +6,7 @@ import json
 import os
 import re
 from contextlib import contextmanager
-from dataclasses import asdict, dataclass, field, replace
+from dataclasses import asdict, dataclass, field
 from time import perf_counter
 
 from llama_index.core import QueryBundle, VectorStoreIndex
@@ -218,7 +218,6 @@ def evidence_from_node(node, score=None, neighbours=None) -> Evidence:
         check_page=m.get("check_page", False),
         ocr_reasons=m.get("ocr_reasons", []),
         figure_label=m.get("figure_label"),
-        description=m.get("description", ""),
         figure_pdf_page=m.get("figure_pdf_page"),
         figure_printed_page=m.get("figure_printed_page"),
         figure_printed_page_reason=m.get("figure_printed_page_reason"),
@@ -227,8 +226,8 @@ def evidence_from_node(node, score=None, neighbours=None) -> Evidence:
 
 def figure_nodes(figures, title):
     """1. Cite the legend page when a figure's caption is printed separately.
-    2. Embed the printed caption plus its separately labelled generated description.
-    3. Keep the caption separately so answer and evidence text stay source-only.
+    2. Embed only the printed label and caption, ignoring any description supplied.
+    3. Keep the caption separately for source evidence, grading and answers.
     """
     nodes = []
     for figure in figures:
@@ -259,42 +258,25 @@ def figure_nodes(figures, title):
             kind="figure",
             caption=figure.caption.replace("\x00", ""),
             figure_label=figure.label.replace("\x00", ""),
-            description=figure.description.replace("\x00", ""),
             text_source=figure.text_source,
             passage_hash=figure.id,
             figure_pdf_page=figure.pdf_page,
             figure_printed_page=figure.printed_page,
             figure_printed_page_reason=figure.printed_page_reason,
         )
-        node.text = node.metadata["caption"]
-        if figure.description:
-            node.text += (
-                "\n\nGenerated description (for discovery only):\n"
-                + node.metadata["description"]
-            )
+        node.text = node.metadata["figure_label"] + "\n\n" + node.metadata["caption"]
         node.excluded_embed_metadata_keys = list(node.metadata)
         nodes.append(node)
     return nodes
 
 
-def description_match(question, evidence):
-    """1. Compare meaningful query words with caption and description words.
-    2. Mark discovery when a description supplies a query word absent in the caption.
-    """
-
-    def words(text):
-        return {w for w in re.findall(r"[^\W\d_]+", text.casefold()) if len(w) > 3}
-
-    return bool(words(question) & (words(evidence.description) - words(evidence.text)))
-
-
 def indexed_nodes(extraction, title, pdf_path=None):
     """1. Preserve old versions' passage-only index input.
-    2. For v5, read all kept figure outcomes and index captions and descriptions.
+    2. For v5, index printed figure labels and captions without kept descriptions.
     3. Link prose to its same-book figures without changing passage ids or text.
     """
     figures = (
-        figure_entries(extraction, require_records=True, pdf_path=pdf_path)
+        figure_entries(extraction, pdf_path=pdf_path)
         if os.environ.get("INDEX_VERSION", INDEX_VERSION) == "v5"
         else []
     )
@@ -330,7 +312,7 @@ def neighbouring_passages(node, store) -> list[dict]:
 
 
 def ingest_book(book, endpoint, database, store_factory=vector_store, output=print):
-    """1. Extract passages and, for v5, load kept figure description outcomes.
+    """1. Extract passages and, for v5, printed figure labels and captions.
     2. Probe the endpoint's model and dimensions and select its table.
     3. Ask LlamaIndex which stable passage ids are already stored.
     4. Insert only missing passages through LlamaIndex, committing each passage.
@@ -401,7 +383,7 @@ def search(question, endpoint, database, store_factory=vector_store, k=10):
     2. Refuse absent tables or a mismatched recorded model or dimension.
     3. Filter to content, summary, glossary and, for v5, figures in LlamaIndex.
     4. Keep original match ranks, then attach missing same-book referenced figures.
-    5. Return source-only evidence text, with descriptions private to grading.
+    5. Return source-only evidence text without descriptions or discovery notes.
     """
     embedded = embed_query(endpoint, question)
     table = model_table(
@@ -462,12 +444,6 @@ def search(question, endpoint, database, store_factory=vector_store, k=10):
                     continue
                 evidence.append(evidence_from_node(node, match.score))
                 seen.add(node.node_id)
-        evidence = [
-            replace(item, found_by_description=description_match(question, item))
-            if item.kind == "figure"
-            else item
-            for item in evidence
-        ]
         return evidence, table, embedded.seconds
 
 

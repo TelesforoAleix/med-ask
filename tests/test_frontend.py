@@ -87,7 +87,7 @@ def test_resolve_page_shows_source_reasons_and_four_actions(tmp_path):
     subprocess.run(["node", str(output)], check=True, capture_output=True)
 
 
-def test_figure_heading_renders_discovery_note_without_description():
+def test_figure_heading_never_renders_description_or_discovery_note():
     subprocess.run(
         [
             "node",
@@ -115,7 +115,7 @@ def test_figure_heading_renders_discovery_note_without_description():
         assert.ok(html.includes('Printed caption'));
         assert.ok(html.includes('Plate: PDF page 32'));
         assert.ok(html.includes('Caption cited from PDF page 31'));
-        assert.ok(html.includes('Found by its description'));
+        assert.ok(!html.includes('Found by its description'));
         assert.ok(!html.includes(item.description));
         assert.ok(!render({...item, found_by_description: false})
           .includes('Found by its description'));

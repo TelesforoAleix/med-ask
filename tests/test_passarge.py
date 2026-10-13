@@ -110,7 +110,9 @@ def test_legend_is_cited_and_plate_is_described(atlas, tmp_path):
     assert rendered == [32]
     assert endpoint.describe.call_args.args[0] == b"synthetic plate PNG"
     assert "Synthetic plate 32" in endpoint.describe.call_args.args[1]
-    again = figure_entries(extraction, tmp_path / "figures", pdf_path=path)[0]
+    again = figure_entries(
+        extraction, tmp_path / "figures", pdf_path=path, load_descriptions=True
+    )[0]
     assert again.description == "Generated synthetic structures."
 
 

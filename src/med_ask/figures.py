@@ -71,12 +71,19 @@ def label_key(identifier):
     return re.sub(r"[–—]", "-", identifier.casefold())
 
 
-def figure_entries(extraction, root=ROOT, require_records=False, *, pdf_path=None):
+def figure_entries(
+    extraction,
+    root=ROOT,
+    require_records=False,
+    *,
+    pdf_path=None,
+    load_descriptions=False,
+):
     """1. Use captions already separated from prose in readings and text layers.
     2. Preserve printed captions and attach verified page accounting.
     3. Give repeated or unnumbered figures separate stable source identities.
     4. For Passarge, use the settled plate pages and facing printed legends.
-    5. Load kept descriptions without calls; optionally require terminal records.
+    5. Leave kept descriptions unread unless explicitly requested for later review.
     """
     entries, occurrences = [], Counter()
     for order, caption in enumerate(extraction.captions, 1):
@@ -109,6 +116,8 @@ def figure_entries(extraction, root=ROOT, require_records=False, *, pdf_path=Non
         if pdf_path is None:
             raise ValueError("Passarge figure extraction requires its PDF path")
         entries = passarge_entries(extraction, pdf_path)
+    if not (load_descriptions or require_records):
+        return entries
     loaded = []
     for entry in entries:
         record = load_description(entry, root)
