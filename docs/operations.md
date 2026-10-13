@@ -416,15 +416,23 @@ Extraction without current readings preserves the existing paragraphs and counts
 With readings it uses blank-line blocks as paragraphs, drops the watermark line
 `Copyrighted material`, and stores figure markers and their captions separately.
 Readings apply the same contents/index title exclusion as PDF text. Exact kind
-headings (including spaced letters) override bookmark kinds and persist until
-another heading or bookmark changes the section. Short uppercase or title-case
-lines (at most 14 words and 120 characters, without sentence/list punctuation)
-become subordinate headings. Ordinary prose remains source text. Sustained
+headings (including spaced letters) override bookmark kinds. A new chapter or
+bookmark closes the prior section; repeated headers for the same chapter retain
+its subsection. Standalone chapter numbers and uppercase chapter running titles
+are recognised even without bookmarks. Chapter-opening contents outlines remain
+content. A front-matter heading such as Acknowledgments or Preface ends a coarse
+contents bookmark. Numbered section titles and matching PDF typography identify
+reading headings; short uppercase or title-case lines are also recognised (at
+most 14 words and 120 characters, without sentence/list punctuation). Matching
+PDF heading sizes set hierarchy; headings without typography use one peer level.
+A heading of the same or a higher level closes the preceding kind section.
+Ordinary prose remains source text. Sustained
 repetition of a 1–64-token pattern (at least eight copies, 64 tokens and 200
 characters), or 200 copies of a horizontal whitespace character, cuts the tail
 at its first occurrence when passages are built. Saved readings are untouched;
 the original failures and queued-page marker remain on the retained prefix. The
-first or last line supplies a printed number only when the sequence supports it; the existing numbering inference remains the fallback.
+first or last line supplies a printed number only when the sequence supports it;
+the existing numbering inference remains the fallback.
 Passing OCR paragraphs can join across pages. Queued pages and inherited OCR in
 a book being rebuilt from readings cannot. Every passage records `born-digital`,
 `inherited-ocr` or `ocr`; queued passages retain their reasons and are indexed

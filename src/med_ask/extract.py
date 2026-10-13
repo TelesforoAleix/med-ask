@@ -54,6 +54,32 @@ EXCLUDED_HEADINGS = {
     "contenido",
     "resumen del contenido",
 }
+CHAPTER_HEADING = re.compile(r"^(chapter|cap[ií]tulo|kapitel)\s+(\d+)\b", re.I)
+FRONT_MATTER_HEADINGS = {
+    "preface",
+    "prefacio",
+    "foreword",
+    "prólogo",
+    "prologo",
+    "acknowledgments",
+    "acknowledgements",
+    "agradecimientos",
+}
+
+
+def reading_chapter(line):
+    """1. Accept a standalone chapter number or an uppercase chapter running title.
+    2. Reject contents entries with mixed-case titles or a trailing page number.
+    3. Return a comparable chapter identity without treating it as a passage kind.
+    """
+    title = line.strip()
+    match = CHAPTER_HEADING.match(title)
+    if match and (
+        match.end() == len(title)
+        or (match[1].isupper() and not re.search(r"\s\d+\s*$", title))
+    ):
+        return match[1].casefold(), int(match[2])
+    return None
 
 
 def excluded_section(section):
@@ -61,13 +87,24 @@ def excluded_section(section):
     return any(title.strip().casefold() in EXCLUDED_HEADINGS for title in section)
 
 
-def reading_heading(line):
+def reading_heading(line, blocks=(), body_size=10.0):
     """1. Recognise exact kind and contents/index titles, including spaced letters.
-    2. Accept short uppercase or title-case lines without sentence/list punctuation.
-    3. Leave ordinary prose and figure markers as source text.
+    2. Accept chapter and numbered section headings, including sentence-case titles.
+    3. Accept PDF-confirmed headings or short uppercase/title-case lines.
+    4. Leave ordinary prose and figure markers as source text.
     """
     title = line.strip()
     if passage_kind((title,)) != "content" or excluded_section((title,)):
+        return True
+    if reading_chapter(title):
+        return True
+    if re.match(r"^\d+(?:\.\d+)+\s+[^\W\d_]", title) and len(title) < 220:
+        return not END_SENTENCE.search(title)
+    if any(
+        "".join(block.text.casefold().split()) == "".join(title.casefold().split())
+        and _heading(block, body_size)
+        for block in blocks
+    ):
         return True
     words = title.split()
     return (
@@ -78,6 +115,55 @@ def reading_heading(line):
         and not LIST_START.match(title)
         and (title.isupper() or title.istitle())
     )
+
+
+def reading_section(line, bookmark_path, heading_path, body_size, blocks):
+    """1. Close the prior section at a new chapter or front-matter heading.
+    2. Keep repeated headers for the same chapter from resetting its subsection.
+    3. Treat chapter contents outlines as content, not book-wide exclusions.
+    4. Use matching PDF heading sizes when available; otherwise use one peer level.
+    5. Replace headings at the same or a lower level and retain higher ancestors.
+    """
+    title = line.strip()
+    chapter = reading_chapter(title)
+    previous_chapter = next(
+        (
+            reading_chapter(t.strip())
+            for t in reversed(bookmark_path)
+            if reading_chapter(t.strip())
+        ),
+        None,
+    )
+    if chapter:
+        if chapter != previous_chapter:
+            bookmark_path[:] = [title]
+            heading_path.clear()
+        return
+    if title.casefold() in FRONT_MATTER_HEADINGS:
+        bookmark_path[:] = [title]
+        heading_path.clear()
+        return
+    if excluded_section((title,)):
+        if previous_chapter and title.casefold() not in {"index", "índice"}:
+            return
+        bookmark_path[:] = [title]
+        heading_path.clear()
+        return
+    # Contents entries can themselves contain Summary/Problems; they remain entries.
+    if excluded_section(bookmark_path):
+        return
+    normalized = "".join(title.casefold().split())
+    matching = [
+        block.size
+        for block in blocks
+        if "".join(block.text.casefold().split()) == normalized
+        and _heading(block, body_size)
+    ]
+    size = max(matching) if matching else body_size * 1.2
+    while heading_path and size >= heading_path[-1][0] * 0.97:
+        heading_path.pop()
+    if not bookmark_path or title.casefold() != bookmark_path[-1].strip().casefold():
+        heading_path.append((size, title))
 
 
 def cut_reading_loop(text):
@@ -1356,7 +1442,7 @@ def extract_book(
                     continue
                 group = []
                 for line in paragraph.splitlines():
-                    if reading_heading(line):
+                    if reading_heading(line, blocks, body_size):
                         if group:
                             _reading_passage(
                                 passages,
@@ -1370,16 +1456,9 @@ def extract_book(
                                 reading,
                             )
                             group = []
-                        size = body_size * (
-                            1.35 if passage_kind((line,)) != "content" else 1.2
+                        reading_section(
+                            line, bookmark_path, heading_path, body_size, blocks
                         )
-                        while heading_path and size >= heading_path[-1][0] * 0.97:
-                            heading_path.pop()
-                        if (
-                            not bookmark_path
-                            or line.strip().casefold() != bookmark_path[-1].casefold()
-                        ):
-                            heading_path.append((size, line.strip()))
                         section = tuple(
                             bookmark_path + [title for _, title in heading_path]
                         )
