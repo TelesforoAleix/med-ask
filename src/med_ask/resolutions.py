@@ -12,7 +12,7 @@ from uuid import uuid4
 import pymupdf
 from flask import Blueprint, abort, current_app, jsonify, request
 
-from med_ask.extract import _number, _printed_pages
+from med_ask.extract import _number
 from med_ask.manifest import load_manifest
 from med_ask.ocr import (
     DPI,
@@ -21,12 +21,20 @@ from med_ask.ocr import (
     VisionPageTimeout,
     VisionUnavailable,
     failed_rules,
-    inspect_book,
+    load_reading,
     reading_candidates,
     save_reading,
 )
 from med_ask.ocr import (
     ROOT as OCR_ROOT,
+)
+from med_ask.resolve_cache import (
+    ROOT as CACHE_ROOT,
+)
+from med_ask.resolve_cache import (
+    DiagnosticsUnavailable,
+    keep_hint_cache_current,
+    load_cache,
 )
 
 ROOT = Path("/data/originals/resolutions")
@@ -86,34 +94,15 @@ def private_api():
     api = Blueprint("resolutions", __name__, url_prefix="/api/private/resolve")
     diagnostics = {}
 
-    def inspected(book):
-        ocr_root, resolution_root = roots()
-        files = sorted((ocr_root / book.id).glob("*.json"))
-        signature = (
-            book.path,
-            book.path.stat().st_mtime_ns,
-            book.language,
-            tuple((p.name, p.stat().st_mtime_ns, p.stat().st_size) for p in files),
-        )
-        cached = diagnostics.get(book.id)
-        if cached is None or cached[0] != signature:
-            pages = inspect_book(book, ocr_root, apply_resolutions=False)
-            diagnostics[book.id] = (signature, pages)
-        else:
-            pages = cached[1]
-        # Resolutions are cheap to reload and must be visible across workers.
-        return [
-            {
-                **p,
-                "resolution": (
-                    resolution := load_resolution(
-                        book.id, p["pdf_page"], resolution_root
-                    )
-                ),
-                "rules_failed": [] if resolution else p["rules_failed"],
-            }
-            for p in pages
-        ]
+    def cached_pages(book):
+        return load_cache(book, roots()[0], cache_root(), diagnostics)
+
+    def cache_root():
+        return current_app.config.get("RESOLVE_CACHE_ROOT", CACHE_ROOT)
+
+    @api.errorhandler(DiagnosticsUnavailable)
+    def diagnostics_unavailable(error):
+        return jsonify(error=str(error)), 503
 
     @api.errorhandler(OSError)
     @api.errorhandler(ValueError)
@@ -137,17 +126,21 @@ def private_api():
         book = books().get(book_id)
         if book is None:
             abort(404)
-        pages = inspected(book)
+        pages = cached_pages(book)
         if (
             not 1 <= number <= len(pages)
             or pages[number - 1]["text_source"] == "hidden"
         ):
             abort(404)
         page = pages[number - 1]
-        decisions = _printed_pages([p["candidates"] for p in pages])
-        printed = decisions[number - 1][0]
-        if printed is None and len(page["candidates"]) == 1:
-            printed = next(iter(page["candidates"].values()))
+        resolution = load_resolution(book_id, number, roots()[1])
+        page = {
+            **page,
+            "record": load_reading(book_id, number, roots()[0]),
+            "resolution": resolution,
+            "rules_failed": [] if resolution else page["rules_failed"],
+        }
+        printed = page["printed_page"]
         return book, page, printed
 
     def body():
@@ -178,8 +171,12 @@ def private_api():
         for book in catalogue.values():
             if selected and selected != book.id:
                 continue
-            for page in inspected(book):
+            for page in cached_pages(book):
                 reasons = page["rules_failed"]
+                if not reasons or load_resolution(
+                    book.id, page["pdf_page"], roots()[1]
+                ):
+                    continue
                 if reasons and (not reason or reason in reasons):
                     rows.append(
                         dict(
@@ -324,8 +321,6 @@ def private_api():
                 attempt["finish_reason"],
             )
             # Reload under the lock; append only, never promote the candidate.
-            from med_ask.ocr import load_reading
-
             record = load_reading(book_id, number, ocr_root)
             if record is None:
                 record = dict(
@@ -346,6 +341,7 @@ def private_api():
                     record["previous_versions"].append(json.loads(path.read_text()))
             record["readings"].append(attempt)
             save_reading(book_id, number, record, ocr_root)
+            keep_hint_cache_current(book_id, number, ocr_root, cache_root())
         return jsonify(
             attempt_id=attempt["attempt_id"],
             text=attempt["text"],

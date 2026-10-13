@@ -19,6 +19,7 @@ from med_ask.evaluation import (
 from med_ask.extract import _external_output, extract_book
 from med_ask.figures import describe_figures, figure_entries
 from med_ask.manifest import load_manifest
+from med_ask.ocr import ROOT as OCR_ROOT
 from med_ask.ocr import (
     VisionEndpoint,
     VisionUnavailable,
@@ -26,6 +27,7 @@ from med_ask.ocr import (
     read_book,
     recheck_book,
 )
+from med_ask.resolve_cache import build_cache
 from med_ask.retrieval import ingest_book, ingest_status, search
 
 DEFAULT_EVAL_FILE = "/data/originals/eval/med-ask-eval.v2.jsonl"
@@ -100,6 +102,10 @@ def main():
     commands.add_parser(
         "ocr-recheck", help="Recheck saved readings without model calls"
     ).add_argument("books", nargs="*")
+    commands.add_parser(
+        "resolve-cache",
+        help="Build resolve diagnostics without models or database writes",
+    ).add_argument("books", nargs="*")
     evaluation = commands.add_parser("eval")
     evaluation.add_argument(
         "--purpose", help="Embedding purpose to evaluate (default EMBEDDING_PURPOSE)"
@@ -137,6 +143,7 @@ def main():
         "ocr",
         "ocr-queue",
         "ocr-recheck",
+        "resolve-cache",
         "figures-count",
         "figures-describe",
     }:
@@ -189,6 +196,8 @@ def main():
             if not read_book(book, endpoint, limit=args.limit):
                 raise SystemExit(3)
         rows = [queue_summary(book) for book in selected]
+    elif args.command == "resolve-cache":
+        rows = [build_cache(book, OCR_ROOT) for book in selected]
     elif args.command == "ocr-queue":
         rows = [queue_summary(book) for book in selected]
     elif args.command == "ocr-recheck":
