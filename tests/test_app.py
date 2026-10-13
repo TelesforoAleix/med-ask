@@ -320,9 +320,7 @@ def test_successful_search_logs_labels_and_scores(app, monkeypatch):
     ]
 
 
-def test_figure_description_reaches_grade_but_not_browser_log_or_answer(
-    app, monkeypatch
-):
+def test_figure_description_is_unused_in_grade_browser_log_and_answer(app, monkeypatch):
     import json
     from dataclasses import replace
 
@@ -356,12 +354,13 @@ def test_figure_description_reaches_grade_but_not_browser_log_or_answer(
     )
     assert response.status_code == 200
     item = response.json["evidence"][0]
-    assert item["text"] == figure.text and item["found_by_description"]
+    assert item["text"] == figure.text and not item["found_by_description"]
     assert "description" not in item
     assert figure.description not in response.data.decode()
     row = database.rows[response.json["question_id"]]
     assert figure.description not in json.dumps(row)
-    assert figure.description in generation.complete.call_args.args[1][1]["content"]
+    assert figure.description not in generation.complete.call_args.args[1][1]["content"]
+    assert figure.figure_label in generation.complete.call_args.args[1][1]["content"]
     answer = client.post(
         "/api/answer",
         json={"question_id": response.json["question_id"]},

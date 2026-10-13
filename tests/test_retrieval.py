@@ -540,8 +540,8 @@ def test_real_v5_figures_resume_and_caption_only_evidence(
     figures = [e for e in evidence if e.kind == "figure"]
     assert len(figures) == 1
     assert figures[0].text == "Figure 3-12 Synthetic structures in sequence."
-    assert figures[0].description == "Generated synthetic spindle."
-    assert figures[0].found_by_description
+    assert figures[0].description == ""
+    assert not figures[0].found_by_description
     endpoint.purpose = "embed-large-bulk"
     again = ingest_book(book, endpoint, real_database, output=lambda *a, **k: None)
     assert again["skipped"] == result["stored"]

@@ -21,7 +21,6 @@ from med_ask.figures import (
 from med_ask.generation import build_answer_prompt, grade_candidates, group_evidence
 from med_ask.ocr import VisionEndpoint, VisionPageTimeout, VisionUnavailable
 from med_ask.retrieval import (
-    description_match,
     evidence_from_node,
     figure_nodes,
     indexed_nodes,
@@ -246,25 +245,57 @@ def test_atomic_failure_leaves_previous_record(tmp_path, monkeypatch):
     assert len(list(path.parent.iterdir())) == 1
 
 
-def test_figure_nodes_and_grade_answer_boundary(tmp_path):
+def test_default_entries_ignore_and_preserve_existing_description_file(tmp_path):
+    source = extraction()
+    figure = figure_entries(source, tmp_path)[0]
+    record = {
+        **asdict(figure),
+        "status": "described",
+        "method_version": "synthetic-method",
+        "description": "Unused generated text.",
+    }
+    save_description(figure, record, tmp_path)
+    path = tmp_path / figure.book_id / f"{figure.id}.json"
+    before = path.read_bytes()
+    assert figure_entries(source, tmp_path)[0].description == ""
+    assert (
+        figure_entries(source, tmp_path, load_descriptions=True)[0].description
+        == record["description"]
+    )
+    assert path.read_bytes() == before
+
+
+def test_figure_nodes_and_grading_ignore_supplied_descriptions(tmp_path):
     figure = replace(
         figure_entries(extraction(), tmp_path)[0],
         description="Secret generated structures: spindle.",
     )
     node = figure_nodes([figure], "Synthetic title")[0]
-    assert "spindle" in node.get_content(metadata_mode=MetadataMode.EMBED)
+    assert (
+        node.get_content(metadata_mode=MetadataMode.EMBED)
+        == figure.label + "\n\n" + figure.caption
+    )
+    assert "description" not in node.metadata
     evidence = evidence_from_node(node, 0.8)
     assert evidence.text == figure.caption and evidence.kind == "figure"
-    assert evidence.description == figure.description
-    assert description_match("Where is the spindle?", evidence)
-    assert not description_match("Which structures?", evidence)
+    assert evidence.description == "" and not evidence.found_by_description
+    # Even a stale caller cannot pass generated discovery text into grading.
+    evidence = replace(
+        evidence, description=figure.description, found_by_description=True
+    )
     endpoint = MagicMock()
     endpoint.complete.return_value = "yes"
     flags, _ = grade_candidates("Where is the spindle?", [evidence], endpoint)
     assert flags == [True]
-    assert figure.description in endpoint.complete.call_args.args[1][1]["content"]
+    grade = json.loads(endpoint.complete.call_args.args[1][1]["content"])
+    assert grade == {
+        "question": "Where is the spindle?",
+        "passage": figure.caption,
+        "figure_label": figure.label,
+    }
     groups = group_evidence([evidence], flags, "en")
     assert "description" not in groups[0]["evidence"][0]
+    assert not groups[0]["evidence"][0]["found_by_description"]
     assert figure.description not in json.dumps(groups)
     # Even a raw evidence dictionary containing a description cannot leak it.
     prompt = build_answer_prompt(
@@ -288,14 +319,18 @@ def test_same_book_explicit_references_only(tmp_path):
     )
 
 
-def test_v5_requires_attempts_old_versions_unchanged(tmp_path, monkeypatch):
+def test_v5_needs_no_descriptions_old_versions_unchanged(tmp_path, monkeypatch):
     source = extraction()
     source.passages = [make_passage(1)]
     monkeypatch.setenv("INDEX_VERSION", "v4")
     assert len(indexed_nodes(source, "Title")) == 1
     monkeypatch.setenv("INDEX_VERSION", "v5")
-    with pytest.raises(ValueError, match="not attempted"):
-        indexed_nodes(source, "Title")
+    monkeypatch.setattr(
+        "med_ask.figures.load_description",
+        MagicMock(side_effect=AssertionError("must not read")),
+    )
+    nodes = indexed_nodes(source, "Title")
+    assert len(nodes) == 2 and nodes[1].metadata["kind"] == "figure"
     assert model_table("synthetic", True, "embed-large-bulk") == model_table(
         "synthetic", True, "embed-large"
     )
@@ -330,7 +365,7 @@ def test_search_preserves_ranks_and_attaches_figures(tmp_path, monkeypatch):
         "Where is the spindle?", FakeEndpoint(), database, lambda *a: store
     )
     assert [r.id for r in results] == [node.node_id, figure.id]
-    assert results[1].text == figure.caption and results[1].found_by_description
+    assert results[1].text == figure.caption and not results[1].found_by_description
     assert index.as_retriever.call_args.kwargs["filters"].filters[0].value == [
         "content",
         "summary",
