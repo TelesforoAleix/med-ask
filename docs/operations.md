@@ -923,3 +923,31 @@ The candidate is labelled generated and must be accepted or discarded. Its
 hinted attempt is appended to the kept reading history without replacing the
 selected reading. Discarding dismisses the candidate; the attempt stays in
 history. Accepting writes a resolution. Kept reading text is otherwise untouched.
+
+#### Build resolve diagnostics before using the screen
+
+Resolve requests never inspect a PDF. Build the source-side diagnostic cache
+once after deployment, and rebuild after PDF or kept-reading changes:
+
+```sh
+docker compose --profile ingest run -d --no-deps --name med-ask-resolve-cache ingest resolve-cache
+# Wait for completion; do not poll. The retained container log has per-book totals.
+docker wait med-ask-resolve-cache
+docker logs med-ask-resolve-cache
+```
+
+Pass book ids after `resolve-cache` to rebuild selected books. This command
+inspects sources without models, embeddings, database writes or changes to
+kept readings. It writes atomic diagnostic files at
+`/data/originals/resolve-cache/<book-id>/diagnostics.json`. They contain source
+text and must never enter git. Old cache files survive an interrupted rebuild.
+A rebuild refuses to publish if its input metadata changed during inspection.
+
+Queue and page requests read this cache and check PDF/reading file metadata.
+A missing or stale cache returns HTTP 503 with the exact rebuild command,
+without attempting a scan. Worker memory reuses parsed files until they change.
+Resolutions are read live and do not stale the cache. Appending a hinted attempt
+advances only that reading's cache metadata, preserving the selected text and
+all other input fingerprints; unrelated changes still require a rebuild.
+The existing page-image route and a hinted reading may render their one requested
+page. Queue, page detail and saving resolutions never open a PDF.

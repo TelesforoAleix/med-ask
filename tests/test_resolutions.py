@@ -10,6 +10,7 @@ from med_ask import create_app, ocr
 from med_ask.extract import extract_book
 from med_ask.manifest import Book
 from med_ask.resolutions import load_resolution, save_resolution
+from med_ask.resolve_cache import build_cache
 
 
 @pytest.fixture
@@ -28,6 +29,7 @@ def owner(tmp_path, monkeypatch):
         TESTING=True,
         OCR_ROOT=tmp_path / "ocr",
         RESOLUTIONS_ROOT=tmp_path / "resolutions",
+        RESOLVE_CACHE_ROOT=tmp_path / "resolve-cache",
     )
     reading = dict(
         text="A synthetic original paragraph with enough words to be read.",
@@ -43,6 +45,7 @@ def owner(tmp_path, monkeypatch):
         previous_versions=[],
     )
     ocr.save_reading(book.id, 1, reading, app.config["OCR_ROOT"])
+    build_cache(book, app.config["OCR_ROOT"], app.config["RESOLVE_CACHE_ROOT"])
     return app, book
 
 
@@ -242,6 +245,7 @@ def test_confirm_preserves_an_uncorroborated_printed_number(owner):
     record = ocr.load_reading(book.id, 1, root)
     record["text"] = "30\n\nA synthetic source paragraph with enough words ends here."
     ocr.save_reading(book.id, 1, record, root)
+    build_cache(book, root, app.config["RESOLVE_CACHE_ROOT"])
     assert (
         app.test_client()
         .post(route("/resolution"), json={"action": "confirm"})
@@ -262,11 +266,11 @@ def test_confirm_preserves_an_uncorroborated_printed_number(owner):
 def test_cached_queue_observes_another_workers_resolution(owner, monkeypatch):
     app, book = owner
     inspect = MagicMock(wraps=ocr.inspect_book)
-    monkeypatch.setattr("med_ask.resolutions.inspect_book", inspect)
+    monkeypatch.setattr("med_ask.resolve_cache.inspect_book", inspect)
     client = app.test_client()
     assert len(client.get("/api/private/resolve/queue").json["queue"]) == 3
     assert client.get(route()).status_code == 200
-    assert inspect.call_count == 1
+    assert inspect.call_count == 0
     root = app.config["RESOLUTIONS_ROOT"]
     root.joinpath(book.id).mkdir(parents=True)
     save_resolution(
@@ -276,7 +280,7 @@ def test_cached_queue_observes_another_workers_resolution(owner, monkeypatch):
         root,
     )
     assert len(client.get("/api/private/resolve/queue").json["queue"]) == 2
-    assert inspect.call_count == 1
+    assert inspect.call_count == 0
 
 
 def test_atomic_resolution_failure_keeps_previous_history(owner, monkeypatch):
@@ -301,3 +305,139 @@ def test_atomic_resolution_failure_keeps_previous_history(owner, monkeypatch):
     )
     assert path.read_bytes() == before
     assert not list(path.parent.glob("*.tmp"))
+
+
+def test_all_read_and_resolution_requests_work_without_opening_pdf(owner, monkeypatch):
+    app, _ = owner
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("PDF opened inside a resolve request")
+
+    monkeypatch.setattr("med_ask.resolve_cache.inspect_book", forbidden)
+    monkeypatch.setattr("pymupdf.open", forbidden)
+    client = app.test_client()
+    assert client.get("/api/private/resolve/queue").status_code == 200
+    assert client.get(route()).status_code == 200
+    assert (
+        client.post(route("/resolution"), json={"action": "confirm"}).status_code == 200
+    )
+
+
+@pytest.mark.parametrize("change", ["missing", "pdf", "reading", "language", "version"])
+def test_missing_or_stale_cache_fails_fast_without_scan(owner, monkeypatch, change):
+    app, book = owner
+    path = app.config["RESOLVE_CACHE_ROOT"] / book.id / "diagnostics.json"
+    if change == "missing":
+        path.unlink()
+    elif change == "pdf":
+        book.path.touch()
+    elif change == "reading":
+        (app.config["OCR_ROOT"] / book.id / "1.json").touch()
+    else:
+        data = json.loads(path.read_text())
+        data["fingerprint"][change] = "changed"
+        path.write_text(json.dumps(data))
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("request tried to rebuild diagnostics")
+
+    monkeypatch.setattr("med_ask.resolve_cache.inspect_book", forbidden)
+    for path in ("/api/private/resolve/queue", route()):
+        response = app.test_client().get(path)
+        assert response.status_code == 503
+        assert "ingest resolve-cache synthetic" in response.json["error"]
+
+
+def test_hint_leaves_cache_valid_for_the_next_request(owner):
+    app, _ = owner
+    endpoint = MagicMock()
+    endpoint.read.return_value = dict(
+        text="A synthetic hinted reading.", model="synthetic", finish_reason="stop"
+    )
+    app.config["VISION_ENDPOINT"] = endpoint
+    client = app.test_client()
+    assert (
+        client.post(route("/hint"), json={"hint": "Synthetic hint"}).status_code == 200
+    )
+    assert client.get(route()).status_code == 200
+    assert client.get("/api/private/resolve/queue").status_code == 200
+
+
+def test_failed_cache_build_preserves_previous_cache(owner, monkeypatch):
+    app, book = owner
+    path = app.config["RESOLVE_CACHE_ROOT"] / book.id / "diagnostics.json"
+    before = path.read_bytes()
+
+    def fail(*args, **kwargs):
+        raise OSError("synthetic build interruption")
+
+    monkeypatch.setattr("med_ask.resolve_cache.inspect_book", fail)
+    with pytest.raises(OSError):
+        build_cache(book, app.config["OCR_ROOT"], app.config["RESOLVE_CACHE_ROOT"])
+    assert path.read_bytes() == before
+
+
+def test_cache_command_uses_neither_database_nor_model(owner, monkeypatch, capsys):
+    from med_ask import ingest
+
+    app, book = owner
+    monkeypatch.setattr(ingest, "load_manifest", lambda _: {book.id: book})
+    monkeypatch.setattr(ingest, "OCR_ROOT", app.config["OCR_ROOT"])
+    monkeypatch.setattr(
+        ingest,
+        "build_cache",
+        lambda book, root: build_cache(book, root, app.config["RESOLVE_CACHE_ROOT"]),
+    )
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("diagnostic command constructed a database or model")
+
+    for name in ("Database", "Endpoint", "VisionEndpoint"):
+        monkeypatch.setattr(ingest, name, forbidden)
+    monkeypatch.setattr("sys.argv", ["ingest", "resolve-cache", book.id])
+    ingest.main()
+    assert json.loads(capsys.readouterr().out)[0]["queued"] == 3
+
+
+def test_hint_cannot_mask_an_unrelated_reading_change(owner):
+    app, _ = owner
+    endpoint = MagicMock()
+
+    def read(*args, **kwargs):
+        ocr.save_reading(
+            "synthetic",
+            2,
+            dict(method_version=ocr.METHOD_VERSION),
+            app.config["OCR_ROOT"],
+        )
+        return dict(
+            text="Synthetic hinted text.", model="synthetic", finish_reason="stop"
+        )
+
+    endpoint.read.side_effect = read
+    app.config["VISION_ENDPOINT"] = endpoint
+    client = app.test_client()
+    assert (
+        client.post(route("/hint"), json={"hint": "Synthetic hint"}).status_code == 200
+    )
+    response = client.get("/api/private/resolve/queue")
+    assert response.status_code == 503
+    assert "resolve-cache synthetic" in response.json["error"]
+
+
+def test_changed_inputs_during_cache_build_preserve_previous_cache(owner, monkeypatch):
+    from med_ask.resolve_cache import DiagnosticsUnavailable
+
+    app, book = owner
+    path = app.config["RESOLVE_CACHE_ROOT"] / book.id / "diagnostics.json"
+    before = path.read_bytes()
+
+    def changed(*args, **kwargs):
+        pages = ocr.inspect_book(*args, **kwargs)
+        book.path.touch()
+        return pages
+
+    monkeypatch.setattr("med_ask.resolve_cache.inspect_book", changed)
+    with pytest.raises(DiagnosticsUnavailable, match="Inputs changed"):
+        build_cache(book, app.config["OCR_ROOT"], app.config["RESOLVE_CACHE_ROOT"])
+    assert path.read_bytes() == before
