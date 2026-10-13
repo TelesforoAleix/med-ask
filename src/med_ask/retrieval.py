@@ -6,7 +6,8 @@ import json
 import os
 import re
 from contextlib import contextmanager
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
+from time import perf_counter
 
 from llama_index.core import QueryBundle, VectorStoreIndex
 from llama_index.core.schema import MetadataMode, TextNode
@@ -20,6 +21,7 @@ from sqlalchemy.engine import make_url
 
 from med_ask.embedding import PurposeEmbedding, embed_query
 from med_ask.extract import Passage, extract_book, passage_label
+from med_ask.figures import REFERENCE, figure_entries, label_key
 
 NEIGHBOUR_WORDS = 120
 INDEX_VERSION = "v2"
@@ -56,6 +58,9 @@ class Evidence:
     text_source: str = "born-digital"
     check_page: bool = False
     ocr_reasons: list[str] = field(default_factory=list)
+    figure_label: str | None = None
+    description: str = ""
+    found_by_description: bool = False
 
 
 def model_table(model: str, roles=False, purpose="embed") -> str:
@@ -68,7 +73,11 @@ def model_table(model: str, roles=False, purpose="embed") -> str:
     version = os.environ.get("INDEX_VERSION", INDEX_VERSION)
     if not re.fullmatch(r"v[0-9]{1,4}", version):
         raise ValueError("INDEX_VERSION must be v followed by one to four digits")
-    version += "r" if roles is True and purpose != "embed-large" else ""
+    version += (
+        "r"
+        if roles is True and purpose not in {"embed-large", "embed-large-bulk"}
+        else ""
+    )
     return f"e_{version}_{stem}_{digest}"
 
 
@@ -80,11 +89,12 @@ def passage_id(passage: Passage) -> str:
     return hashlib.sha256(value.encode()).hexdigest()
 
 
-def passage_nodes(passages: list[Passage], title: str) -> list[TextNode]:
+def passage_nodes(passages: list[Passage], title: str, figures=()) -> list[TextNode]:
     """1. Compute stable ids from the unchanged extracted passages.
     2. Link the immediately adjacent passages only when their sections match.
     3. Remove only NUL characters from text and every nested metadata string.
     4. Exclude all metadata from embedding text so only source text is sent.
+    5. Link explicit figure references only to entries from the same book.
     """
 
     def remove_nul(value):
@@ -110,6 +120,14 @@ def passage_nodes(passages: list[Passage], title: str) -> list[TextNode]:
         metadata.update(
             title=title, passage_hash=identities[position], label=passage_label(passage)
         )
+        references = {label_key(m[1]) for m in REFERENCE.finditer(passage.text)}
+        linked = [
+            f.id
+            for f in figures
+            if f.book_id == passage.book_id and label_key(f.identifier) in references
+        ]
+        if linked:
+            metadata["figures"] = linked
         for name, offset in (("before", -1), ("after", 1)):
             neighbour = position + offset
             if (
@@ -170,7 +188,7 @@ def evidence_from_node(node, score=None, neighbours=None) -> Evidence:
     m = node.metadata
     return Evidence(
         id=node.node_id,
-        text=node.get_content(metadata_mode=MetadataMode.NONE),
+        text=m.get("caption", node.get_content(metadata_mode=MetadataMode.NONE)),
         book_id=m["book_id"],
         title=m["title"],
         language=m["language"],
@@ -189,6 +207,72 @@ def evidence_from_node(node, score=None, neighbours=None) -> Evidence:
         ),
         check_page=m.get("check_page", False),
         ocr_reasons=m.get("ocr_reasons", []),
+        figure_label=m.get("figure_label"),
+        description=m.get("description", ""),
+    )
+
+
+def figure_nodes(figures, title):
+    """1. Adapt figure source pages and captions to ordinary evidence metadata.
+    2. Embed the printed caption plus its separately labelled generated description.
+    3. Keep the caption separately so answer and evidence text stay source-only.
+    """
+    nodes = []
+    for figure in figures:
+        passage = Passage(
+            figure.book_id,
+            figure.language,
+            (figure.pdf_page, figure.pdf_page),
+            (figure.printed_page, figure.printed_page) if figure.printed_page else None,
+            figure.printed_page_reason,
+            (),
+            figure.order,
+            figure.caption,
+        )
+        node = passage_nodes([passage], title)[0]
+        node.id_ = figure.id
+        node.metadata.update(
+            kind="figure",
+            caption=figure.caption.replace("\x00", ""),
+            figure_label=figure.label.replace("\x00", ""),
+            description=figure.description.replace("\x00", ""),
+            text_source=figure.text_source,
+            passage_hash=figure.id,
+        )
+        node.text = node.metadata["caption"]
+        if figure.description:
+            node.text += (
+                "\n\nGenerated description (for discovery only):\n"
+                + node.metadata["description"]
+            )
+        node.excluded_embed_metadata_keys = list(node.metadata)
+        nodes.append(node)
+    return nodes
+
+
+def description_match(question, evidence):
+    """1. Compare meaningful query words with caption and description words.
+    2. Mark discovery when a description supplies a query word absent in the caption.
+    """
+
+    def words(text):
+        return {w for w in re.findall(r"[^\W\d_]+", text.casefold()) if len(w) > 3}
+
+    return bool(words(question) & (words(evidence.description) - words(evidence.text)))
+
+
+def indexed_nodes(extraction, title):
+    """1. Preserve old versions' passage-only index input.
+    2. For v5, read all kept figure outcomes and index captions and descriptions.
+    3. Link prose to its same-book figures without changing passage ids or text.
+    """
+    figures = (
+        figure_entries(extraction, require_records=True)
+        if os.environ.get("INDEX_VERSION", INDEX_VERSION) == "v5"
+        else []
+    )
+    return passage_nodes(extraction.passages, title, figures) + figure_nodes(
+        figures, title
     )
 
 
@@ -219,13 +303,15 @@ def neighbouring_passages(node, store) -> list[dict]:
 
 
 def ingest_book(book, endpoint, database, store_factory=vector_store, output=print):
-    """1. Extract the requested book and probe the endpoint's model and dimensions.
-    2. Select its role-aware table and record the extracted count outside git.
+    """1. Extract passages and, for v5, load kept figure description outcomes.
+    2. Probe the endpoint's model and dimensions and select its table.
     3. Ask LlamaIndex which stable passage ids are already stored.
     4. Insert only missing passages through LlamaIndex, committing each passage.
     5. Print durable progress and the final stored/extracted summary.
     """
+    started = perf_counter()
     extraction = extract_book(book.path, book.id, book.language)
+    nodes = indexed_nodes(extraction, book.title)
     probe = embed_query(endpoint, "index dimension probe")
     dimensions = len(probe.vectors[0])
     table = model_table(
@@ -234,13 +320,12 @@ def ingest_book(book, endpoint, database, store_factory=vector_store, output=pri
         getattr(endpoint, "purpose", "embed"),
     )
     database.register(table, probe.model, dimensions)
-    database.book_count(table, book.id, len(extraction.passages))
+    database.book_count(table, book.id, len(nodes))
     with managed_store(
         store_factory, database.url, table, dimensions, setup=True
     ) as store:
         adapter = PurposeEmbedding(endpoint, probe.model, dimensions)
         index = VectorStoreIndex.from_vector_store(store, embed_model=adapter)
-        nodes = passage_nodes(extraction.passages, book.title)
         existing = set()
         for start in range(0, len(nodes), 250):
             existing.update(
@@ -266,6 +351,7 @@ def ingest_book(book, endpoint, database, store_factory=vector_store, output=pri
             f"skipped={skipped}",
             flush=True,
         )
+        seconds = perf_counter() - started
         return {
             "book_id": book.id,
             "model": probe.model,
@@ -273,14 +359,22 @@ def ingest_book(book, endpoint, database, store_factory=vector_store, output=pri
             "stored": len(existing),
             "extracted": len(nodes),
             "skipped": skipped,
+            "seconds": seconds,
+            "inserted_per_second": (len(existing) - skipped) / seconds,
+            "duplicates": len(nodes) - len({n.node_id for n in nodes}),
+            "kinds": {
+                kind: sum(n.metadata["kind"] == kind for n in nodes)
+                for kind in sorted({n.metadata["kind"] for n in nodes})
+            },
         }
 
 
 def search(question, endpoint, database, store_factory=vector_store, k=10):
     """1. Embed the question once and select the model's role-aware vector table.
     2. Refuse absent tables or a mismatched recorded model or dimension.
-    3. Filter to content, summary, and glossary inside LlamaIndex's vector search.
-    4. Convert passages and same-section neighbours into plain evidence records.
+    3. Filter to content, summary, glossary and, for v5, figures in LlamaIndex.
+    4. Keep original match ranks, then attach missing same-book referenced figures.
+    5. Return source-only evidence text, with descriptions private to grading.
     """
     embedded = embed_query(endpoint, question)
     table = model_table(
@@ -307,7 +401,14 @@ def search(question, endpoint, database, store_factory=vector_store, k=10):
             filters=MetadataFilters(
                 filters=[
                     MetadataFilter(
-                        key="kind", value=list(SEARCH_KINDS), operator=FilterOperator.IN
+                        key="kind",
+                        value=list(SEARCH_KINDS)
+                        + (
+                            ["figure"]
+                            if os.environ.get("INDEX_VERSION", INDEX_VERSION) == "v5"
+                            else []
+                        ),
+                        operator=FilterOperator.IN,
                     )
                 ]
             ),
@@ -316,13 +417,38 @@ def search(question, endpoint, database, store_factory=vector_store, k=10):
             evidence_from_node(m.node, m.score, neighbouring_passages(m.node, store))
             for m in matches
         ]
+        seen = {e.id for e in evidence}
+        for match in matches:
+            identities = [
+                identity
+                for identity in match.node.metadata.get("figures", [])
+                if identity not in seen
+            ]
+            if not identities:
+                continue
+            for node in store.get_nodes(node_ids=identities):
+                if (
+                    node.node_id in seen
+                    or node.metadata.get("kind") != "figure"
+                    or node.metadata["book_id"] != match.node.metadata["book_id"]
+                ):
+                    continue
+                evidence.append(evidence_from_node(node, match.score))
+                seen.add(node.node_id)
+        evidence = [
+            replace(item, found_by_description=description_match(question, item))
+            if item.kind == "figure"
+            else item
+            for item in evidence
+        ]
         return evidence, table, embedded.seconds
 
 
 def ingest_status(books, database, store_factory=vector_store):
     """1. Extract each selected book to count current passages and hidden pages.
     2. Read each recorded model through LlamaIndex's metadata filters.
-    3. Report how many current stable ids are stored for each book and model.
+    3. Include figure identities when checking v5, preserving other versions.
+    4. Report stored current ids, extracted counts and duplicate gaps per book.
     """
     models = database.models()
     rows = []
@@ -330,8 +456,10 @@ def ingest_status(books, database, store_factory=vector_store):
         extraction = extract_book(book.path, book.id, book.language)
         passages = extraction.passages
         hidden = sum(page.text_source == "hidden" for page in extraction.pages)
-        identities = {passage_id(p) for p in passages}
         for table, model, dimensions in models:
+            identities = {passage_id(p) for p in passages}
+            figures = figure_entries(extraction) if table.startswith("e_v5_") else []
+            identities.update(f.id for f in figures)
             record = database.model(table)
             nodes = []
             if record and record[2]:
@@ -350,7 +478,8 @@ def ingest_status(books, database, store_factory=vector_store):
                     model=model,
                     table=table,
                     stored=stored,
-                    extracted=len(passages),
+                    extracted=len(passages) + len(figures),
+                    duplicates=len(passages) + len(figures) - len(identities),
                     hidden=hidden,
                 )
             )

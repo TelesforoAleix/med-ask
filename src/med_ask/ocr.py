@@ -60,6 +60,19 @@ class VisionEndpoint:
         2. Return the unmodified text, reported identity, and completion reason.
         3. Distinguish page timeouts from outages without endpoint response text.
         """
+        prompt = PROMPT + ("\nOwner hint: " + hint if hint else "")
+        return self._request(png, prompt, timeout=20 if hint else 180)
+
+    def describe(self, png, prompt):
+        """1. Send the whole page with a figure-specific description prompt.
+        2. Use the reading endpoint's timeout and outage distinction, without retries.
+        """
+        return self._request(png, prompt)
+
+    def _request(self, png, prompt, timeout=180):
+        """1. Send one vision request with in-memory image bytes and supplied text.
+        2. Distinguish page timeouts from outages and return the completion.
+        """
         try:
             reply = self.client.chat.completions.create(
                 model="vision",
@@ -67,11 +80,7 @@ class VisionEndpoint:
                     {
                         "role": "user",
                         "content": [
-                            {
-                                "type": "text",
-                                "text": PROMPT
-                                + ("\nOwner hint: " + hint if hint else ""),
-                            },
+                            {"type": "text", "text": prompt},
                             {
                                 "type": "image_url",
                                 "image_url": {
@@ -84,7 +93,7 @@ class VisionEndpoint:
                 ],
                 temperature=0,
                 max_tokens=MAX_TOKENS,
-                timeout=20 if hint else 180,
+                timeout=timeout,
             )
         except APITimeoutError as error:
             raise VisionPageTimeout("page request timed out") from error

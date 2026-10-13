@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import './style.css'
 import { Resolve } from './resolve.jsx'
 import { sourceLabel } from './source-label.js'
+import { EvidenceHeading } from './evidence-heading.jsx'
 
 async function post(path, body) {
   const response = await fetch(path, {
@@ -154,10 +155,9 @@ function App() {
         {result.groups.map(group => <section className="book-group" key={group.book_id} aria-label={group.title}>
           <h3>{group.title}</h3>
           {group.evidence.map(item => <article key={item.id} id={`passage-${item.number}`}>
-          <h4>Passage [{item.number}]</h4>
+          <EvidenceHeading item={item} />
           <p className="source-label">{sourceLabel(item)}</p>
           {item.section_path.length > 0 && <p className="note">{item.section_path.join(' › ')}</p>}
-          <p className="passage-heading">Original passage (in {item.language}):</p>
           {item.neighbours.filter(n => n.position === 'before').map(n =>
             <blockquote className="neighbour" key={n.id}>
               <small>Preceding passage · {sourceLabel(n)}</small>

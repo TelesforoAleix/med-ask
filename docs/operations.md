@@ -712,6 +712,108 @@ on the server to run the updated command from the clone.
 
 ## Retrieval eval
 
+### Figures and the v5 index
+
+Figure entries use the extractor's separated captions: `[FIGURE n]` markers in
+kept readings and paragraphs starting with Figure, Figura or Fig. in text layers.
+They preserve the caption, label, book, PDF page and verified printed page. Stable
+ids include source identity and occurrence, so unnumbered figures on one page
+stay separate. Opening a figure uses **Review source**, showing the whole page.
+
+Descriptions are generated discovery text, never printed evidence. One `vision`
+request receives the whole page at 300 DPI plus the figure label and caption.
+It describes only visible structures, steps and labels in the caption's language.
+Records live under `/data/originals/figures/<book>/<figure-id>.json`, with a method
+version, generated marker, duration and described/failed status. Each is synced
+and atomically renamed. A rerun skips every terminal record, including failures
+and records from an earlier description method. Timeouts are recorded as failures;
+an endpoint outage stops the job, preserving completed records. No page reading
+is changed or repeated. A failed description still allows caption indexing.
+
+Complete the code merge after rebasing on the resolve-screen slice. Then run node
+steps longer than about a minute as retained detached containers named
+`med-ask-fig-<step>`, without `--rm`. Never poll them. Hand off the container name,
+log location and completion command, `docker wait <container>`; after completion,
+read its exit status and final log once. Summaries belong only under
+`/data/originals/eval/fig-work/` or in the container log.
+
+Count first, with no model calls:
+
+```sh
+docker compose --profile ingest run -d --name med-ask-fig-count ingest figures-count alberts mathews passarge stryer --output /data/originals/eval/fig-work/counts.json
+```
+
+Review per-book figure counts, captionless and unnumbered counts against source
+captions before describing. Stop if a book's figures cannot be found reliably.
+Ask the orchestrator to start `vision` on the Mac and keep it awake. Once told it
+is serving, sample five reproducibly selected figures per book (20 total, both
+languages and at least five each from Alberts and Stryer):
+
+```sh
+docker compose --profile ingest run -d --name med-ask-fig-sample ingest figures-describe alberts mathews passarge stryer --limit 5 --output /data/originals/eval/fig-work/sample.json
+```
+
+After it ends, report the counts, seconds per newly described figure, estimated
+hours for the remainder and five descriptions in full, visibly labelled generated.
+Review descriptions against at most ten whole-page images across the entire
+slice. Stop for orchestrator review before running the remainder. Escalate if
+descriptions invent content, figures cannot be located reliably, or the estimate
+exceeds two nights. With explicit approval, and `vision` serving:
+
+```sh
+docker compose --profile ingest run -d --name med-ask-fig-describe ingest figures-describe alberts mathews passarge stryer --output /data/originals/eval/fig-work/descriptions.json
+```
+
+Every figure must then have a described or reported failed record. The GPU serves
+one Mac purpose at a time: stop after descriptions and ask the orchestrator to
+start `embed-large-bulk`. When it is serving, build only v5, leaving v4 untouched:
+
+```sh
+docker compose --profile ingest run -d --name med-ask-fig-build -e INDEX_VERSION=v5 -e EMBEDDING_PURPOSE=embed-large-bulk -e EMBEDDING_ROLES=false -e EMBEDDING_TIMEOUT=300 ingest ingest alberts mathews passarge stryer
+```
+
+The bulk purpose's table identity is the same as `embed-large` uses for queries.
+Never send questions through the bulk purpose or build through node `embed-large`.
+Only v5 adds kind `figure` to ingestion and the vector-search filter. Its embedding
+text is caption plus labelled generated description. Prose references to explicit
+figure labels attach matching figures from the same book, deduplicated, after the
+original vector matches; original top-k ranks remain intact. Captions and descriptions
+both reach relevance grading. Descriptions are removed before evidence is stored
+or returned to the browser. The answer and translation receive captions only.
+The evidence column shows the label, caption and page, and a short generated
+discovery note when a query word of more than three letters occurs in the
+description but not the caption. Descriptions themselves are never evidence.
+
+Record build counts per book and kind, stored/extracted totals, duplicate-id gaps
+and elapsed passages/second. Each current unique id must be stored; a repeated
+prose id accounts for an extracted/stored gap. Ingest resumes missing ids only.
+
+Score both versions through the node's `embed-large`, roles off. Eval text must
+stay on the node: never print, log, copy, send to the Mac or include it in a PR.
+Result files contain ids, scores, ranks and timings only.
+
+```sh
+docker compose --profile ingest run -d --name med-ask-fig-score-v4 -e INDEX_VERSION=v4 -e EVAL_RUNS_DIR=/data/originals/eval/fig-work ingest eval --purpose embed-large --no-roles
+# Start after v4 scoring finishes.
+docker compose --profile ingest run -d --name med-ask-fig-score-v5 -e INDEX_VERSION=v5 -e EVAL_RUNS_DIR=/data/originals/eval/fig-work ingest eval --purpose embed-large --no-roles
+docker compose --profile ingest run --name med-ask-fig-gate ingest eval --figure-gate /data/originals/eval/fig-work/<v4-result>.json /data/originals/eval/fig-work/<v5-result>.json --cohort /data/originals/eval/v2-work/scores.json
+```
+
+The figure gate reports Hit@5 and Hit@10 overall and for `cohort_ids`. It requires
+matching 32 scored ids, all 20 cohort ids and the measured v4 baseline of 32/32
+and 20/20 at 10. It passes only if v5 also reaches 32/32 and 20/20 at 10. The
+ordinary eval comparison command still applies its original Hit@5 gate.
+Write three figure questions from real printed captions, separate from eval,
+run search without application question logging, and report each figure's rank.
+
+Switch only after the gate passes. Before the switch, type the rollback in the
+handover: set only `INDEX_VERSION=v4` in the server's private `.env`, without
+displaying its contents, and `sudo systemctl restart med-ask.service`. On pass,
+set only `INDEX_VERSION=v5` and restart. Keep `embed-large` and roles off. Check
+`/api/health`, then run a figure probe through the app and check the evidence
+column shows its printed caption, opens its whole page and hides the description.
+If the gate fails, leave the app on v4 and report. Never alter v2, v3 or v4 tables.
+
 The eval set measures how often search returns the pages that hold the evidence,
 per embedding model, and how fast a question is embedded. It is private and lives
 outside git at `/data/originals/eval/med-ask-eval.v2.jsonl` in `ingest`
