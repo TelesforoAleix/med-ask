@@ -15,6 +15,7 @@ services:
       DATABASE_URL: "postgresql://medask:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/medask"
     volumes:
       - ${SOURCES_PATH:-sources-empty}:/data/sources:ro
+      - /srv/homelab/med-ask-data/navigation:/data/navigation:ro
       - ${ORIGINALS_PATH:-originals-empty}:/data/originals
     depends_on:
       postgres:
@@ -39,6 +40,7 @@ services:
       DATABASE_URL: "postgresql://medask:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/medask"
     volumes:
       - ${SOURCES_PATH:-sources-empty}:/data/sources:ro
+      - /srv/homelab/med-ask-data/navigation:/data/navigation:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -58,6 +60,7 @@ services:
       DATABASE_URL: "postgresql://medask:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/medask"
     volumes:
       - ${SOURCES_PATH:-sources-empty}:/data/sources:ro
+      - /srv/homelab/med-ask-data/navigation:/data/navigation:rw
       - ${ORIGINALS_PATH:-originals-empty}:/data/originals
     depends_on:
       postgres:

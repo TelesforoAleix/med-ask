@@ -1,6 +1,7 @@
 """The med-ask HTTP application."""
 
 import os
+from dataclasses import replace
 from io import BytesIO
 from pathlib import Path
 from time import perf_counter
@@ -23,6 +24,8 @@ from med_ask.generation import (
     translate_passage,
 )
 from med_ask.manifest import load_manifest
+from med_ask.navigation import ROOT as NAVIGATION_ROOT
+from med_ask.navigation import load_navigation
 from med_ask.retrieval import NoIndex, search
 
 
@@ -53,6 +56,37 @@ def create_app() -> Flask:
         @app.get("/api/private/ping")
         def private_ping():
             return jsonify(private="ok")
+
+    navigation_memory = {}
+
+    def navigation(book_id):
+        try:
+            book = load_manifest(app.config["SOURCES_DIR"]).get(book_id)
+            return (
+                load_navigation(
+                    book,
+                    app.config.get("NAVIGATION_ROOT", NAVIGATION_ROOT),
+                    navigation_memory,
+                )
+                if book
+                else None
+            )
+        except (OSError, ValueError, KeyError):
+            return None
+
+    @app.get("/api/book/<book_id>/contents")
+    def contents_route(book_id):
+        data = navigation(book_id)
+        if data is None:
+            return jsonify(error="Navigation unavailable"), 404
+        return jsonify(contents=data["contents"])
+
+    @app.get("/api/book/<book_id>/page/<int:number>")
+    def page_info_route(book_id, number):
+        data = navigation(book_id)
+        if data is None or not 1 <= number <= len(data["pages"]):
+            return jsonify(error="Navigation unavailable"), 404
+        return jsonify(**data["pages"][number - 1], page_count=len(data["pages"]))
 
     def asker():
         if private_routes_enabled:
@@ -98,6 +132,19 @@ def create_app() -> Flask:
                 db,
                 k=int(os.environ.get("PASSAGE_CANDIDATES", "26")),
             )
+            navigation_by_book = {
+                book_id: navigation(book_id)
+                for book_id in {e.book_id for e in candidates}
+            }
+            candidates = [
+                replace(
+                    e,
+                    links=(navigation_by_book[e.book_id] or {})
+                    .get("references", {})
+                    .get(e.id, []),
+                )
+                for e in candidates
+            ]
             generation = app.config.get("GENERATION_ENDPOINT") or GenerationEndpoint()
             flags, grading_seconds = grade_candidates(question, candidates, generation)
             groups = group_evidence(candidates, flags, language)

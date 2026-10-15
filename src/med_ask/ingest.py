@@ -19,6 +19,7 @@ from med_ask.evaluation import (
 from med_ask.extract import _external_output, extract_book
 from med_ask.figures import describe_figures, figure_entries
 from med_ask.manifest import load_manifest
+from med_ask.navigation import build_navigation
 from med_ask.ocr import ROOT as OCR_ROOT
 from med_ask.ocr import (
     VisionEndpoint,
@@ -106,6 +107,13 @@ def main():
         "resolve-cache",
         help="Build resolve diagnostics without models or database writes",
     ).add_argument("books", nargs="*")
+    navigate = commands.add_parser(
+        "navigate", help="Build navigation without model calls"
+    )
+    navigate.add_argument("books", nargs="+")
+    navigate.add_argument(
+        "--output", type=Path, help="External counts-only report path"
+    )
     evaluation = commands.add_parser("eval")
     evaluation.add_argument(
         "--purpose", help="Embedding purpose to evaluate (default EMBEDDING_PURPOSE)"
@@ -144,6 +152,7 @@ def main():
         "ocr-queue",
         "ocr-recheck",
         "resolve-cache",
+        "navigate",
         "figures-count",
         "figures-describe",
     }:
@@ -198,6 +207,12 @@ def main():
             if not read_book(book, endpoint, limit=args.limit):
                 raise SystemExit(3)
         rows = [queue_summary(book) for book in selected]
+    elif args.command == "navigate":
+        rows = [build_navigation(book, ocr_root=OCR_ROOT) for book in selected]
+        if args.output:
+            path = _external_output(args.output)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(rows, indent=2), encoding="utf-8")
     elif args.command == "resolve-cache":
         rows = [build_cache(book, OCR_ROOT) for book in selected]
     elif args.command == "ocr-queue":
