@@ -320,10 +320,31 @@ index. Ingesting on the shared CPU model slows searches in both projects; arrang
 long runs overnight with the owner. Before any ingest, search returns a clear
 "No index yet" response for the current model.
 
+### The Mac's models
+
+The Mac's login-started llama.cpp router serves both `vision` and
+`embed-large-bulk`; nothing needs to be started by hand. The first call loads
+its model: `vision` takes about 9 seconds from cold and then answers in about
+1.5–2 seconds; a batch of 20 embeddings takes about 0.8–1.4 seconds. Each model
+is released after 10 minutes idle, so a later call loads it again. The
+`embed-large-bulk` and `embed-large` purposes report the same identity and
+2,560 dimensions, and their `model_table` names are unchanged.
+
+Until the Mac's usage profiles ship, both purposes are allowed. In the coming
+Working profile, `embed-large-bulk` is allowed but `vision` is not; a vision
+call there answers “not available until Inference”. Page reading with vision
+must wait until the owner switches to Inference, typically overnight. Before
+a long build or reading run, make sure the Mac is awake and its current profile
+allows the purpose. A fast generic HTTP 500 (under about 1.3 seconds) means the
+Mac may be off, asleep or its router stopped. For either that failure or “not
+available until Inference”, stop, report and resume the job later. Builds and
+readings resume by skipping work already stored.
+
 ### Reading pages with vision
 
 The external service is used only through the `vision` purpose at `MODEL_BASE_URL`,
-with `MODEL_API_KEY`. It must be serving throughout the reading run. Pages are sent
+with `MODEL_API_KEY`. Follow **The Mac's models** subsection before and during a
+reading run. Pages are sent
 one at a time, as in-memory `data:` PNGs at 300 DPI, temperature 0 and at most
 4,096 completion tokens. The fixed transcription prompt preserves the printed
 language and spelling, joins line-end hyphenation, separates paragraphs, and
@@ -463,9 +484,9 @@ that pass the empty-with-ink check must keep their publisher text: if a book has
 fewer than 20 eligible pages, report that count rather than forcing readings.
 Report kept, hidden, read-and-passing and queued counts, rule failures, reading
 seconds per page, rotation retries and rescues. Readings remain only under
-`/data/originals/ocr/`. If vision is unavailable, stop and resume when told. Stop
-and report repeated token-limit failures, atomic-write failures, or an ingest
-failure; do not switch the index after a failed run.
+`/data/originals/ocr/`. If vision is unavailable, follow **The Mac's models**
+subsection. Stop and report repeated token-limit failures, atomic-write failures,
+or an ingest failure; do not switch the index after a failed run.
 
 Stop and report the completed measurement before starting any full run. Include
 any upside-down Alberts sample page, its upright reading's line order and failed rules.
@@ -544,7 +565,7 @@ indexes. Report excluded page ranges, shortened passages and largest passage
 lengths under `/data/originals/eval/v4-work/`. Stop for review before starting
 the bulk route.
 
-With the owner's Mac bulk server serving, probe `embed-large-bulk` and
+Follow **The Mac's models** subsection, then probe `embed-large-bulk` and
 `embed-large` once each and require identical reported identity, dimensions
 (2,560) and `model_table` names under `INDEX_VERSION=v4`. Stop on any mismatch.
 The bulk purpose has no fallback; it is for ingestion only. Give its client a
@@ -784,16 +805,16 @@ docker compose --profile ingest run -d --name med-ask-fig-count ingest figures-c
 The measured figure counts are Alberts 1,734, Mathews 914, Stryer 851 and Passarge
 198 (3,697 total). Captionless and unnumbered entries remain visible in count
 summaries for source review. Stop if a book's figures cannot be found reliably.
-The retained description command, for a later run with explicit authorization
-and the Mac serving `vision`, is:
+The retained description command, for a later run with explicit authorization,
+follows **The Mac's models** subsection for `vision` availability:
 
 ```sh
 docker compose --profile ingest run -d --name med-ask-fig-describe ingest figures-describe alberts mathews passarge stryer --output /data/originals/eval/fig-work/descriptions.json
 ```
 
-Do not run it for the current captions-only index. Ask the orchestrator to start
-`embed-large-bulk` on the Mac and keep it awake. When told it is serving, build
-only v5, leaving v4 untouched:
+Do not run it for the current captions-only index. Follow **The Mac's models**
+subsection for `embed-large-bulk` availability, then build only v5, leaving v4
+untouched:
 
 ```sh
 docker compose --profile ingest run -d --name med-ask-fig-build -e INDEX_VERSION=v5 -e EMBEDDING_PURPOSE=embed-large-bulk -e EMBEDDING_ROLES=false -e EMBEDDING_TIMEOUT=300 ingest ingest alberts mathews passarge stryer
@@ -1059,9 +1080,9 @@ poll a running job.
 
 The chosen copy plus Passarge build needs approximately 20–30 minutes of the
 shared GPU, compared with about three hours for all four books. Request the GPU
-and end the turn waiting. Never start, stop or probe a Mac server. When resumed
-with `embed-large-bulk` serving, copy and then ingest Passarge in one detached
-container, saving the copy script beforehand:
+and end the turn waiting. Never start, stop or probe a Mac server. When resumed,
+follow **The Mac's models** subsection, then copy and ingest Passarge in one
+detached container, saving the copy script beforehand:
 
 ```sh
 docker compose --profile ingest run -d --name med-ask-v6-build -e INDEX_VERSION=v6 -e EMBEDDING_PURPOSE=embed-large-bulk -e EMBEDDING_ROLES=false -e EMBEDDING_TIMEOUT=300 --entrypoint sh ingest -c 'python /data/originals/eval/fig-work/copy-v6.py && python -m med_ask.ingest ingest passarge'
