@@ -1131,6 +1131,8 @@ Files contain source headings and labels and must stay outside git.
 
 The host directory `/srv/homelab/med-ask-data/navigation` must exist before
 starting Compose, owned/writable for the ingest container's UID/GID 10001.
+Set `NAVIGATION_PATH=/srv/homelab/med-ask-data/navigation` in the server `.env`.
+Unset local/CI deployments use the declared `navigation-empty` named volume.
 Only ingest mounts it read-write; app and public mount it read-only. Neither
 navigation requests nor public access require an originals mount.
 
