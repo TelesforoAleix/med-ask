@@ -1137,10 +1137,10 @@ Only ingest mounts it read-write; app and public mount it read-only. Neither
 navigation requests nor public access require an originals mount.
 
 ```sh
-docker compose --profile ingest run -d --name med-ask-navigation ingest navigate alberts mathews passarge stryer --output /data/originals/eval/nav-work/report.json
+docker compose --profile ingest run -d --name med-ask-navigation-v2 ingest navigate alberts mathews passarge stryer --output /data/originals/eval/nav-work/report-v2.json
 # End the turn while it runs. After completion:
-docker wait med-ask-navigation
-docker logs med-ask-navigation
+docker wait med-ask-navigation-v2
+docker logs med-ask-navigation-v2
 ```
 
 Re-run after a PDF, kept reading, owner resolution, extraction/figure code or
@@ -1167,3 +1167,22 @@ To disable navigation, delete only the `NAVIGATION_PATH` line from the server
 `.env` without displaying the file, then run `sudo systemctl restart med-ask.service`.
 The mount falls back to the empty `navigation-empty` volume. Keep the navigation
 files and reports on the node; no data deletion or code rollback is needed.
+
+
+Navigation version 2 suppresses every reference kind whose per-book seeded sample
+precision is below 90%. `excluded_kinds` is recorded in both the navigation file
+and report. The report keeps raw `checks` and `pre_filter_precision`, adds
+`published_checks`, and reports `precision` for the retained sample only.
+Per-kind counts distinguish raw `resolved`/`unresolved` from `published`/`excluded`.
+Excluded references remain plain text; passage text and ids are unchanged.
+
+When kept readings supply more than half of the distinct content pages, contents
+retain only explicit numbered Chapter/Capítulo headings and numbered section
+titles. Sections attach to observed chapters with matching numbers and available
+numbered ancestors; no missing chapter headings are invented. Breadcrumbs follow
+that same tree, carrying the preceding retained path across OCR noise or gaps.
+Other books retain their existing contents and breadcrumb construction.
+The report includes `numbered_contents_only`, entries per level and
+`chapter_entry_coverage` for chapter numbers from 1 through the highest numbered
+heading observed in extraction. This range is diagnostic, not an independently
+verified chapter total. All built files, reports and examples stay on the node.

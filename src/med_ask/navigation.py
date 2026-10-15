@@ -21,7 +21,7 @@ from med_ask.resolutions import load_resolution
 from med_ask.retrieval import passage_id
 
 ROOT = Path("/data/navigation")
-VERSION = 1
+VERSION = 2
 KINDS = ("figure", "table", "section", "chapter", "page")
 IDENTIFIER = r"\d+(?:[.\-–—]\d+)*(?:[A-Za-z])?"
 PREFIXES = {
@@ -42,6 +42,63 @@ TABLE_CAPTION = re.compile(
     r"^\s*(?:Table|Tabla)\s+(" + IDENTIFIER + r")\b", re.I | re.M
 )
 HEADING = re.compile(r"^\s*(?:(chapter|cap[ií]tulo)\s+)?(\d+(?:[.\-–—]\d+)*)\b", re.I)
+
+
+NUMBERED_CHAPTER = re.compile(r"^\s*(?:chapter|cap[ií]tulo)\s+(\d{1,3})\b", re.I)
+NUMBERED_SECTION = re.compile(r"^\s*(\d{1,3}(?:\.\d{1,3})+)\s+[^\W\d_]", re.I)
+
+
+def content_page_numbers(extraction):
+    """1. Count each PDF page covered by content passages once."""
+    return {
+        page
+        for p in extraction.passages
+        if p.kind == "content"
+        for page in range(p.pdf_pages[0], p.pdf_pages[1] + 1)
+    }
+
+
+def scanned_book(extraction):
+    """1. Select books where kept readings supply more than half the content pages."""
+    pages = content_page_numbers(extraction)
+    return (
+        bool(pages)
+        and sum(extraction.pages[n - 1].text_source == "ocr" for n in pages)
+        > len(pages) / 2
+    )
+
+
+def numbered_paths(first):
+    """1. Keep explicit numbered chapter headings as roots, deduplicated by number.
+    2. Keep numbered section titles under the observed chapter with that number.
+    3. Attach deeper sections to available numbered ancestors; never invent headings.
+    4. Omit orphan sections and sections preceding their observed chapter heading.
+    """
+    chapters, sections = {}, {}
+    for path, page in sorted(first.items(), key=lambda item: item[1]):
+        title = path[-1].strip()
+        if match := NUMBERED_CHAPTER.match(title):
+            chapters.setdefault(int(match[1]), (title, page))
+        elif match := NUMBERED_SECTION.match(title):
+            number = tuple(int(n) for n in match[1].split("."))
+            sections.setdefault(number, (title, page))
+    result = {(title,): page for title, page in chapters.values()}
+    section_paths = {}
+    for number, (title, page) in sorted(
+        sections.items(), key=lambda item: len(item[0])
+    ):
+        chapter = chapters.get(number[0])
+        if chapter is None or page < chapter[1]:
+            continue
+        parent = (chapter[0],)
+        for depth in range(2, len(number)):
+            candidate = section_paths.get(number[:depth])
+            if candidate and result[candidate] <= page:
+                parent = candidate
+        path = parent + (title,)
+        section_paths[number] = path
+        result[path] = page
+    return result
 
 
 def identifier_key(value):
@@ -87,8 +144,9 @@ def references(text):
 
 def contents_and_pages(extraction, bookmarks):
     """1. Collect bookmark paths and extracted section paths at their first pages.
-    2. Merge identical paths, omit contents/index branches, and order by page.
-    3. Describe every PDF page, carrying the preceding path across passage gaps.
+    2. Merge paths and omit contents/index branches; filter scanned books by number.
+    3. For scanned books, derive breadcrumbs only from that filtered tree.
+    4. Describe every PDF page, carrying the preceding path across passage gaps.
     """
     first = {}
     bookmark_path = []
@@ -111,6 +169,15 @@ def contents_and_pages(extraction, bookmarks):
         add(path, passage.pdf_pages[0])
         for page in range(passage.pdf_pages[0], passage.pdf_pages[1] + 1):
             paths.setdefault(page, path)
+    if scanned_book(extraction):
+        first = numbered_paths(first)
+        # Only retained tree entries can change a scanned page's breadcrumb.
+        paths = {
+            page: path
+            for path, page in sorted(
+                first.items(), key=lambda item: (item[1], len(item[0]), item[0])
+            )
+        }
     tree, nodes = [], {}
     for path, page in sorted(
         first.items(), key=lambda item: (item[1], len(item[0]), item[0])
@@ -244,17 +311,25 @@ def navigation_report(extraction, data, figures, counts, checks, page_texts):
             walk(node["children"], depth + 1)
 
     walk(data["contents"])
-    content_pages = {
-        page
-        for p in extraction.passages
-        if p.kind == "content"
-        for page in range(p.pdf_pages[0], p.pdf_pages[1] + 1)
-    }
+    content_pages = content_page_numbers(extraction)
     covered = sum(bool(data["pages"][n - 1]["section_path"]) for n in content_pages)
     coverage = covered / len(content_pages) if content_pages else 0
     precision = (
         sum(r["passed"] for r in scored.values()) / len(sample) if sample else None
     )
+    observed_chapters = set()
+    for passage in extraction.passages:
+        for title in passage.section_path:
+            if match := NUMBERED_CHAPTER.match(title):
+                observed_chapters.add(int(match[1]))
+            elif match := NUMBERED_SECTION.match(title):
+                observed_chapters.add(int(match[1].split(".")[0]))
+    chapter_entries = {
+        int(match[1])
+        for node in data["contents"]
+        if (match := NUMBERED_CHAPTER.match(node["title"]))
+    }
+    observed_chapters.update(chapter_entries)
     return dict(
         book_id=extraction.book_id,
         counts=counts,
@@ -262,11 +337,54 @@ def navigation_report(extraction, data, figures, counts, checks, page_texts):
         precision=precision,
         precision_passed=precision is not None and precision >= 0.9,
         contents_levels=dict(levels),
+        numbered_contents_only=scanned_book(extraction),
+        chapter_numbers_observed=sorted(observed_chapters),
+        chapter_range_basis="1 through highest numbered heading in extracted paths",
+        chapter_entry_coverage={
+            str(n): n in chapter_entries
+            for n in range(1, max(observed_chapters, default=0) + 1)
+        },
         content_pages=len(content_pages),
         content_pages_with_path=covered,
         contents_coverage=coverage,
         thin_contents=max(levels, default=0) < 2 or coverage < 0.5,
     )
+
+
+def apply_precision_gate(data, report):
+    """1. Exclude every kind whose seeded sample precision is below 90 percent.
+    2. Remove its links from every passage while preserving text, ids and offsets.
+    3. Record raw checks, published counts and retained-sample precision explicitly.
+    """
+    excluded = [
+        kind
+        for kind in KINDS
+        if report["checks"][kind]["precision"] is not None
+        and report["checks"][kind]["precision"] < 0.9
+    ]
+    data["excluded_kinds"] = excluded
+    data["references"] = {
+        identity: retained
+        for identity, links in data["references"].items()
+        if (retained := [link for link in links if link["kind"] not in excluded])
+    }
+    report["excluded_kinds"] = excluded
+    report["pre_filter_precision"] = report["precision"]
+    report["published_checks"] = {
+        kind: (
+            dict(sampled=0, passed=0, precision=None)
+            if kind in excluded
+            else row.copy()
+        )
+        for kind, row in report["checks"].items()
+    }
+    for kind, row in report["counts"].items():
+        row["excluded"] = row["resolved"] if kind in excluded else 0
+        row["published"] = row["resolved"] - row["excluded"]
+    sampled = sum(row["sampled"] for row in report["published_checks"].values())
+    passed = sum(row["passed"] for row in report["published_checks"].values())
+    report["precision"] = passed / sampled if sampled else None
+    report["precision_passed"] = bool(sampled) and report["precision"] >= 0.9
 
 
 def pdf_signature(book):
@@ -334,7 +452,8 @@ def build_navigation(
     """1. Snapshot inputs and extract the book and its existing figure entries.
     2. Read bookmarks and page text, preferring owner resolutions and kept readings.
     3. Build contents, page info and uniquely resolved passage references.
-    4. Score a reproducible sample and refuse changed inputs before atomic publication.
+    4. Score a seeded sample and suppress every kind below 90 percent precision.
+    5. Refuse changed inputs before atomically publishing the filtered navigation.
     """
     signature = fingerprint(book, ocr_root, resolutions_root)
     extraction = extract_book(
@@ -364,6 +483,7 @@ def build_navigation(
         references=links,
     )
     report = navigation_report(extraction, data, figures, counts, checks, texts)
+    apply_precision_gate(data, report)
     if fingerprint(book, ocr_root, resolutions_root) != signature:
         raise ValueError("Navigation inputs changed during build; run navigate again")
     publish(root / f"{book.id}.json", data)
