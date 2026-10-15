@@ -1162,3 +1162,8 @@ precision samples (up to 100 per book, covering each present kind), and contents
 entries per level and content-page coverage. Overall precision below 90% blocks
 handover; a kind below 90% or thin contents is reported for follow-up. No printed
 contents-page parsing is performed.
+
+To disable navigation, delete only the `NAVIGATION_PATH` line from the server
+`.env` without displaying the file, then run `sudo systemctl restart med-ask.service`.
+The mount falls back to the empty `navigation-empty` volume. Keep the navigation
+files and reports on the node; no data deletion or code rollback is needed.
