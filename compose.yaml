@@ -15,6 +15,7 @@ services:
       DATABASE_URL: "postgresql://medask:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/medask"
     volumes:
       - ${SOURCES_PATH:-sources-empty}:/data/sources:ro
+      - ${NAVIGATION_PATH:-navigation-empty}:/data/navigation:ro
       - ${ORIGINALS_PATH:-originals-empty}:/data/originals
     depends_on:
       postgres:
@@ -39,6 +40,7 @@ services:
       DATABASE_URL: "postgresql://medask:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/medask"
     volumes:
       - ${SOURCES_PATH:-sources-empty}:/data/sources:ro
+      - ${NAVIGATION_PATH:-navigation-empty}:/data/navigation:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -58,6 +60,7 @@ services:
       DATABASE_URL: "postgresql://medask:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/medask"
     volumes:
       - ${SOURCES_PATH:-sources-empty}:/data/sources:ro
+      - ${NAVIGATION_PATH:-navigation-empty}:/data/navigation:rw
       - ${ORIGINALS_PATH:-originals-empty}:/data/originals
     depends_on:
       postgres:
@@ -93,6 +96,7 @@ services:
 volumes:
   postgres-data:
   sources-empty:
+  navigation-empty:
   originals-empty:
 
 networks:

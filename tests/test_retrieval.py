@@ -93,6 +93,7 @@ def test_evidence_and_plain_embedding_text():
         order=0,
         label="synthetic: pdf pages 1–2 <print pages: 7–8>",
         score=0.73,
+        links=[],
         neighbours=[],
         kind="content",
         text_source="inherited-ocr",

@@ -1119,3 +1119,51 @@ never display the private file. On pass set `INDEX_VERSION=v6`, restart, check
 that `med-ask.service` and `/api/health` are healthy, and verify a panel probe's
 passing evidence shows its printed panel label and opens its plate page. If
 any gate fails, leave the reader on v5 and report the measured failure.
+
+
+## Navigation data
+
+`navigate` builds model-free, rebuildable book navigation separately from the
+index and originals. It writes one atomically replaced `/data/navigation/<book-id>.json`
+with a version, full input fingerprint, contents tree, page accounts and resolved
+references keyed by unchanged passage ids. No source passage text is copied.
+Files contain source headings and labels and must stay outside git.
+
+The host directory `/srv/homelab/med-ask-data/navigation` must exist before
+starting Compose, owned/writable for the ingest container's UID/GID 10001.
+Set `NAVIGATION_PATH=/srv/homelab/med-ask-data/navigation` in the server `.env`.
+Unset local/CI deployments use the declared `navigation-empty` named volume.
+Only ingest mounts it read-write; app and public mount it read-only. Neither
+navigation requests nor public access require an originals mount.
+
+```sh
+docker compose --profile ingest run -d --name med-ask-navigation ingest navigate alberts mathews passarge stryer --output /data/originals/eval/nav-work/report.json
+# End the turn while it runs. After completion:
+docker wait med-ask-navigation
+docker logs med-ask-navigation
+```
+
+Re-run after a PDF, kept reading, owner resolution, extraction/figure code or
+navigation version changes. The builder fingerprints the PDF and all kept-reading
+and resolution files and refuses publication if inputs change mid-build. Existing
+files survive an interrupted build. Applications check the file version and PDF
+stat only, using the sources mount; reading/resolution changes require the explicit
+rebuild above. Parsed files are reused in worker memory until their fingerprint
+changes. Requests never extract a book or call a model for navigation.
+
+Both services expose `GET /api/book/<book-id>/contents`, returning
+`{"contents": [...]}`, and `GET /api/book/<book-id>/page/<pdf-page>`, returning
+`pdf_page`, `printed_page`, `section_path` and `page_count`. Missing/stale navigation,
+unknown books and out-of-range pages return 404. Search evidence adds `links`,
+empty when navigation is unavailable. All existing evidence fields are preserved.
+
+The counts-only report records resolved/unresolved mentions per kind, seeded
+precision samples (up to 100 per book, covering each present kind), and contents
+entries per level and content-page coverage. Overall precision below 90% blocks
+handover; a kind below 90% or thin contents is reported for follow-up. No printed
+contents-page parsing is performed.
+
+To disable navigation, delete only the `NAVIGATION_PATH` line from the server
+`.env` without displaying the file, then run `sudo systemctl restart med-ask.service`.
+The mount falls back to the empty `navigation-empty` volume. Keep the navigation
+files and reports on the node; no data deletion or code rollback is needed.

@@ -118,6 +118,7 @@ class Evidence:
     figure_pdf_page: int | None = None
     figure_printed_page: str | None = None
     figure_printed_page_reason: str | None = None
+    links: list[dict] = field(default_factory=list)
 
 
 def model_table(model: str, roles=False, purpose="embed") -> str:
