@@ -13,6 +13,7 @@ from med_ask.figures import Figure
 from med_ask.manifest import Book
 from med_ask.navigation import (
     VERSION,
+    apply_precision_gate,
     build_navigation,
     contents_and_pages,
     fingerprint,
@@ -420,3 +421,170 @@ def test_navigate_cli_does_not_create_database_or_endpoints(
     main()
     assert json.loads(output.read_text()) == [dict(book_id=book.id)]
     assert json.loads(capsys.readouterr().out) == [dict(book_id=book.id)]
+
+
+@pytest.mark.parametrize("passed, excluded", [(8, True), (9, False), (10, False)])
+def test_precision_gate_withholds_entire_kind_and_preserves_raw_diagnostics(
+    passed, excluded
+):
+    page_link = dict(start=0, end=6, kind="page", label="p. 412", target_pdf_page=2)
+    figure_link = dict(
+        start=8,
+        end=18,
+        kind="figure",
+        label="Figure 7-3",
+        target_pdf_page=3,
+        figure_id="figure-id",
+    )
+    data = dict(
+        references={"mixed": [page_link, figure_link], "pages-only": [page_link]}
+    )
+    counts = {
+        kind: dict(
+            resolved=2 if kind == "page" else 1 if kind == "figure" else 0, unresolved=3
+        )
+        for kind in ("figure", "table", "section", "chapter", "page")
+    }
+    checks = {
+        kind: dict(
+            sampled=10 if kind == "page" else 1 if kind == "figure" else 0,
+            passed=passed if kind == "page" else 1 if kind == "figure" else 0,
+            precision=passed / 10
+            if kind == "page"
+            else 1
+            if kind == "figure"
+            else None,
+        )
+        for kind in counts
+    }
+    report = dict(counts=counts, checks=checks, precision=(passed + 1) / 11)
+    apply_precision_gate(data, report)
+    assert (
+        data["excluded_kinds"]
+        == report["excluded_kinds"]
+        == (["page"] if excluded else [])
+    )
+    assert report["checks"]["page"]["passed"] == passed
+    assert report["counts"]["page"] == dict(
+        resolved=2,
+        unresolved=3,
+        published=0 if excluded else 2,
+        excluded=2 if excluded else 0,
+    )
+    assert data["references"]["mixed"] == (
+        [figure_link] if excluded else [page_link, figure_link]
+    )
+    assert ("pages-only" in data["references"]) is not excluded
+    assert report["precision"] == (1 if excluded else (passed + 1) / 11)
+    assert report["pre_filter_precision"] == (passed + 1) / 11
+    assert report["published_checks"]["page"]["sampled"] == (0 if excluded else 10)
+
+
+def noisy_extraction(ocr_pages=3):
+    source = extraction()
+    paths = [
+        ("Acknowledgments", "A C G T"),
+        ("Capítulo 1", "Noise", "1.1 Synthetic section", "Equation"),
+        ("Noise", "1.1.1 Synthetic subsection"),
+        ("Chapter 2", "2.1 Synthetic section"),
+    ]
+    source.passages = [
+        Passage(
+            source.book_id,
+            source.language,
+            (n, n),
+            None,
+            None,
+            path,
+            n,
+            "Synthetic paragraph.",
+        )
+        for n, path in enumerate(paths, 1)
+    ]
+    for page in source.pages[:ocr_pages]:
+        page.text_source = "ocr"
+    return source
+
+
+def test_scanned_contents_and_breadcrumbs_use_numbered_tree_only():
+    source = noisy_extraction()
+    tree, pages, first = contents_and_pages(source, [])
+    assert [node["title"] for node in tree] == ["Capítulo 1", "Chapter 2"]
+    assert tree[0]["children"][0]["title"] == "1.1 Synthetic section"
+    assert (
+        tree[0]["children"][0]["children"][0]["title"] == "1.1.1 Synthetic subsection"
+    )
+    assert pages[0]["section_path"] == []
+    assert [p["title"] for p in pages[1]["section_path"]] == [
+        "Capítulo 1",
+        "1.1 Synthetic section",
+    ]
+    assert [p["title"] for p in pages[2]["section_path"]] == [
+        "Capítulo 1",
+        "1.1 Synthetic section",
+        "1.1.1 Synthetic subsection",
+    ]
+    assert [p["title"] for p in pages[3]["section_path"]] == [
+        "Chapter 2",
+        "2.1 Synthetic section",
+    ]
+    assert len(first) == 5
+    report = navigation_report(
+        source, dict(contents=tree, pages=pages), [], {}, [], [""] * 4
+    )
+    assert report["numbered_contents_only"]
+    assert report["contents_levels"] == {1: 2, 2: 2, 3: 1}
+    assert report["chapter_entry_coverage"] == {"1": True, "2": True}
+
+
+@pytest.mark.parametrize("ocr_pages", [0, 2])
+def test_books_without_majority_kept_content_pages_keep_original_contents(ocr_pages):
+    source = noisy_extraction(ocr_pages)
+    tree, pages, _ = contents_and_pages(source, [])
+    assert tree[0]["title"] == "Acknowledgments"
+    assert pages[0]["section_path"][1]["title"] == "A C G T"
+    assert pages[1]["section_path"][-1]["title"] == "Equation"
+    report = navigation_report(
+        source, dict(contents=tree, pages=pages), [], {}, [], [""] * 4
+    )
+    assert not report["numbered_contents_only"]
+
+
+def test_scanned_breadcrumbs_carry_past_noise_and_missing_chapters_are_reported():
+    source = noisy_extraction(4)
+    source.passages[2].section_path = ("Equation", "Index letters")
+    source.passages[3].section_path = ("Noise", "3.2 Synthetic orphan")
+    tree, pages, _ = contents_and_pages(source, [])
+    assert [node["title"] for node in tree] == ["Capítulo 1"]
+    assert (
+        pages[1]["section_path"] == pages[2]["section_path"] == pages[3]["section_path"]
+    )
+    report = navigation_report(
+        source, dict(contents=tree, pages=pages), [], {}, [], [""] * 4
+    )
+    assert report["chapter_entry_coverage"] == {"1": True, "2": False, "3": False}
+    assert report["chapter_numbers_observed"] == [1, 3]
+
+
+def test_build_publishes_filtered_links_and_excluded_kinds(tmp_path, monkeypatch):
+    book = make_book(tmp_path)
+    source = extraction()
+    monkeypatch.setattr("med_ask.navigation.extract_book", lambda *a, **k: source)
+    monkeypatch.setattr("med_ask.navigation.figure_entries", lambda *a, **k: [figure()])
+    root = tmp_path / "nav"
+    report = build_navigation(book, root, tmp_path / "ocr", tmp_path / "resolutions")
+    data = load_navigation(book, root)
+    assert data["version"] == 2
+    assert (
+        data["excluded_kinds"]
+        == report["excluded_kinds"]
+        == ["section", "chapter", "page"]
+    )
+    assert list(data["references"]) == [passage_id(source.passages[0])]
+    assert [
+        link["kind"] for link in data["references"][passage_id(source.passages[0])]
+    ] == ["figure"]
+    assert report["checks"]["page"]["precision"] == 0
+    assert report["counts"]["page"]["published"] == 0
+    assert report["precision"] == 1
+    assert report["precision_passed"]
