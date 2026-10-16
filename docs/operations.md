@@ -1157,6 +1157,11 @@ Both services expose `GET /api/book/<book-id>/contents`, returning
 unknown books and out-of-range pages return 404. Search evidence adds `links`,
 empty when navigation is unavailable. All existing evidence fields are preserved.
 
+The source viewer shows every book page with PDF and available printed numbers,
+section breadcrumbs and collapsible contents. Passage references open an inline
+quick look with a page image and a link into the book; books without navigation
+keep passage-only paging.
+
 The counts-only report records resolved/unresolved mentions per kind, seeded
 precision samples (up to 100 per book, covering each present kind), and contents
 entries per level and content-page coverage. Overall precision below 90% blocks

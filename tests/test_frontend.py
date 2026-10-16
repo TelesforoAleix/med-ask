@@ -127,3 +127,174 @@ def test_figure_heading_never_renders_description_or_discovery_note():
         capture_output=True,
         text=True,
     )
+
+
+def run_frontend_script(script, output):
+    subprocess.run(
+        [
+            "node",
+            "--input-type=module",
+            "-e",
+            """
+          import { build } from 'esbuild';
+          await build({ stdin: { contents: process.argv[1], resolveDir: process.cwd(),
+            loader: 'jsx' }, bundle: true, platform: 'node', format: 'cjs',
+            outfile: process.argv[2] });
+        """,
+            script,
+            str(output),
+        ],
+        cwd="frontend",
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(["node", str(output)], check=True, capture_output=True)
+
+
+def test_book_navigation_logic_and_contents_cache(tmp_path):
+    run_frontend_script(
+        """
+        import assert from 'node:assert/strict';
+        import { linkSegments, pageBounds, stepPage, currentContentsEntry,
+          bookContents, navigationJSON } from './src/book-navigation.js';
+        const text = '😀Fig AFig B.';
+        const a = {start: 1, end: 6, target_pdf_page: 4, kind: 'figure'};
+        const b = {start: 6, end: 11, target_pdf_page: 7, kind: 'figure'};
+        assert.deepEqual(linkSegments(text, [b, a]), [
+          {text: '😀'}, {text: 'Fig A', link: a},
+          {text: 'Fig B', link: b}, {text: '.'}]);
+        const overlap = {start: 3, end: 8};
+        const duplicate = {...a};
+        const invalid = [{start: -1, end: 2}, {start: 0, end: 99},
+          {start: 2, end: 2}, {start: 1.5, end: 3}];
+        const segments = linkSegments(text, [overlap, b, a, duplicate, ...invalid]);
+        assert.equal(segments.map(s => s.text).join(''), text);
+        assert.deepEqual(segments.filter(s => s.link).map(s => s.link), [a,b]);
+        const edge = {start: 0, end: 12};
+        assert.deepEqual(linkSegments(text, [edge]), [{text, link: edge}]);
+        assert.deepEqual(linkSegments(text), [{text}]);
+        assert.deepEqual(linkSegments(''), []);
+        assert.deepEqual(linkSegments('ab', [{start:0,end:1},{start:1,end:2}])
+          .map(s => s.text), ['a','b']);
+        for (const [nav, expected] of [[null,[30,31]], [{page_count:900},[1,900]]]) {
+          const bounds = pageBounds([30,31], nav);
+          assert.deepEqual(bounds, expected);
+          assert.equal(stepPage(bounds[0], -1, bounds), bounds[0]);
+          assert.equal(stepPage(bounds[1], 1, bounds), bounds[1]);
+        }
+        assert.equal(stepPage(31, 1, pageBounds([30,31], {page_count:900})), 32);
+        assert.equal(stepPage(30, -1, pageBounds([30,31], {page_count:900})), 29);
+        assert.equal(stepPage(1, 1, [1,1]), 1);
+        const child = {title:'Section', pdf_page:3, children:[]};
+        const figure = {title:'Figure A', pdf_page:3, children:[]};
+        const chapter = {title:'Chapter', pdf_page:2, children:[child,figure]};
+        const other = {title:'Chapter', pdf_page:9, children:[]};
+        const contents = [chapter,other];
+        assert.equal(currentContentsEntry(contents, [chapter,child]), child);
+        assert.equal(currentContentsEntry(contents, [chapter]), chapter);
+        assert.equal(currentContentsEntry(contents, [other]), other);
+        assert.equal(currentContentsEntry(contents, []), null);
+        assert.equal(currentContentsEntry([], [chapter]), null);
+        assert.equal(currentContentsEntry(contents,
+          [{title:'Unknown',pdf_page:2}]), null);
+        assert.equal(currentContentsEntry(contents,
+          [chapter,{title:'Unknown',pdf_page:3}]), chapter);
+        (async () => {
+          let calls = 0;
+          globalThis.fetch = async path => { calls++; return {ok:true,
+            json: async () => ({contents:[]})}; };
+          const first = bookContents('synthetic/book');
+          assert.equal(bookContents('synthetic/book'), first);
+          await Promise.all([first, bookContents('synthetic/book')]);
+          assert.equal(calls, 1);
+          await bookContents('other');
+          assert.equal(calls, 2);
+          globalThis.fetch = async () => ({status:404});
+          assert.equal(await navigationJSON('/missing'), null);
+          assert.equal(await bookContents('missing'), null);
+          globalThis.fetch = async () => { throw new Error('network'); };
+          assert.equal(await bookContents('missing'), null);
+          await assert.rejects(navigationJSON('/failed'));
+          globalThis.fetch = async () => ({status:503,ok:false});
+          await assert.rejects(navigationJSON('/failed'));
+        })().catch(error => { console.error(error); process.exitCode = 1; });
+        """,
+        tmp_path / "navigation.cjs",
+    )
+
+
+def test_book_viewer_and_reference_rendering(tmp_path):
+    run_frontend_script(
+        r"""
+        import React from 'react';
+        import { renderToStaticMarkup as render } from 'react-dom/server';
+        import assert from 'node:assert/strict';
+        import { ViewerPage, BookViewer } from './src/book-viewer.jsx';
+        import { LinkedPassage, QuickLookPage } from './src/linked-passage.jsx';
+        const noop = () => {};
+        const child = {title:'Synthetic section',pdf_page:30,
+          printed_page:'xx',children:[]};
+        const root = {title:'Synthetic chapter',pdf_page:10,
+          printed_page:null,children:[child]};
+        const page = {book_id:'synthetic/book', title:'Synthetic book',
+          label:'Synthetic source', pdf_pages:[30,31], number:30};
+        const navigation = {pdf_page:30,printed_page:'xx',page_count:900,
+          section_path:[root,child]};
+        const props = {page,number:30,navigation,contents:[root],jump:noop};
+        const html = render(<ViewerPage {...props} />);
+        for (const text of ['PDF page 30', 'Printed page xx', 'Book section',
+          'Contents', 'aria-current="location"', '/api/page/synthetic%2Fbook/30'])
+          assert.ok(html.includes(text), text);
+        assert.ok(!html.includes('disabled=""'));
+        assert.ok(!html.includes('<input'));
+        assert.ok(!html.includes('class="book-contents" open'));
+        assert.equal((html.match(/aria-current="location"/g)||[]).length, 1);
+        const fallback = render(<ViewerPage {...props} navigation={null} />);
+        assert.ok(!fallback.includes('Contents'));
+        assert.ok(!fallback.includes('Book section'));
+        assert.ok(!fallback.includes('Printed page xx'));
+        assert.equal((fallback.match(/disabled=""/g)||[]).length, 1);
+        const start = render(<ViewerPage {...props} number={1} />);
+        assert.equal((start.match(/disabled=""/g)||[]).length, 1);
+        const end = render(<ViewerPage {...props} number={900} />);
+        assert.equal((end.match(/disabled=""/g)||[]).length, 1);
+        const noPrinted = render(<ViewerPage {...props}
+          navigation={{...navigation,printed_page:null}} />);
+        assert.ok(noPrinted.includes('PDF page 30'));
+        assert.ok(!noPrinted.includes('Printed page null'));
+        const loading = render(<ViewerPage {...props}
+          navigation={undefined} loading />);
+        assert.equal((loading.match(/disabled=""/g)||[]).length, 2);
+        const paging = render(<ViewerPage {...props} navigation={undefined}
+          loading navigationAvailable />);
+        assert.ok(paging.includes('class="book-contents"'));
+        assert.ok(paging.includes('Synthetic section'));
+        const failure = render(<ViewerPage {...props} navigation={undefined}
+          navigationError retry={noop} />);
+        assert.ok(failure.includes('Retry navigation'));
+        const dialog = render(<BookViewer page={page}
+          question="Synthetic question" close={noop} />);
+        assert.ok(dialog.includes('role="dialog"'));
+        assert.ok(dialog.includes('aria-modal="true"'));
+        const text = 'See Fig A.\nThen continue.';
+        const link = {start:4,end:9,kind:'figure',target_pdf_page:90,
+          label:'unused label'};
+        const item = {...page,text,links:[link],
+          description:'Hidden generated description'};
+        const linked = render(<LinkedPassage item={item} openBook={noop} />);
+        assert.ok(linked.includes('See <button'));
+        assert.ok(linked.includes('>Fig A</button>.\nThen continue.'));
+        const plain = render(<LinkedPassage item={{...item,links:[]}}
+          openBook={noop} />);
+        assert.ok(plain.includes(text));
+        assert.ok(!plain.includes('<button'));
+        const quick = render(<QuickLookPage item={item} link={link} text="Fig A"
+          navigation={navigation} close={noop} openBook={noop} />);
+        for (const value of ['Fig A', '(figure)', 'Synthetic section',
+          '/api/page/synthetic%2Fbook/90', 'Open in the book', 'Close quick look'])
+          assert.ok(quick.includes(value), value);
+        assert.ok(!quick.includes(item.description));
+        assert.ok(!quick.includes('class="generated'));
+        """,
+        tmp_path / "viewer.cjs",
+    )

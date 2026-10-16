@@ -4,6 +4,8 @@ import './style.css'
 import { Resolve } from './resolve.jsx'
 import { sourceLabel, reviewLocation } from './source-label.js'
 import { EvidenceHeading } from './evidence-heading.jsx'
+import { BookViewer } from './book-viewer.jsx'
+import { LinkedPassage } from './linked-passage.jsx'
 
 async function post(path, body) {
   const response = await fetch(path, {
@@ -27,7 +29,6 @@ function App() {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [page, setPage] = useState(null)
-  const [imageError, setImageError] = useState(false)
   const [thumbs, setThumbs] = useState(null)
   const [comment, setComment] = useState('')
   const [feedbackNote, setFeedbackNote] = useState('')
@@ -36,33 +37,12 @@ function App() {
   const [answerNote, setAnswerNote] = useState('')
   const [translations, setTranslations] = useState({})
   const requestVersion = useRef(0)
-  const closeButton = useRef(null)
   const reviewButton = useRef(null)
-  const panel = useRef(null)
 
   function closePage() {
     setPage(null)
     reviewButton.current?.focus()
   }
-
-  useEffect(() => {
-    if (!page) return
-    closeButton.current?.focus()
-    function keydown(event) {
-      if (event.key === 'Escape') closePage()
-      if (event.key === 'Tab') {
-        const controls = panel.current.querySelectorAll('button')
-        const first = controls[0], last = controls[controls.length - 1]
-        if (event.shiftKey && document.activeElement === first) {
-          event.preventDefault(); last.focus()
-        } else if (!event.shiftKey && document.activeElement === last) {
-          event.preventDefault(); first.focus()
-        }
-      }
-    }
-    document.addEventListener('keydown', keydown)
-    return () => document.removeEventListener('keydown', keydown)
-  }, [page])
 
   async function submit(event) {
     event.preventDefault()
@@ -114,11 +94,10 @@ function App() {
     finally { setSaving(false) }
   }
 
-  function review(item, event) {
+  function review(item, event, target) {
     reviewButton.current = event.currentTarget
-    setImageError(false)
     const location = reviewLocation(item)
-    setPage({ ...item, ...location, number: location.pdf_pages[0] })
+    setPage({ ...item, ...location, number: target ?? location.pdf_pages[0] })
   }
 
   return (
@@ -165,7 +144,7 @@ function App() {
               <p>{n.text}{n.truncated ? '…' : ''}</p>
             </blockquote>)}
           <div className={translations[item.id]?.open ? 'passage-pair' : ''}>
-            <blockquote className="passage">{item.text}</blockquote>
+            <LinkedPassage item={item} openBook={review} />
             {translations[item.id]?.open && <section className="generated translation" aria-label="Generated translation">
               <h4>Generated translation</h4>
               {translations[item.id].loading && <p role="status">Translating…</p>}
@@ -197,23 +176,7 @@ function App() {
         </form>
       </section>}
       </>}
-      {page && <div className="panel-backdrop" onClick={closePage}>
-        <aside ref={panel} className="source-panel" role="dialog" aria-modal="true" aria-labelledby="source-title" onClick={event => event.stopPropagation()}>
-          <div className="panel-heading">
-            <h2 id="source-title">{page.title}</h2>
-            <button ref={closeButton} type="button" onClick={closePage}>Close</button>
-          </div>
-          <p className="asked">{searchedQuestion}</p>
-          <p>{sourceLabel(page)}</p>
-          {page.pdf_pages[1] > page.pdf_pages[0] && <div className="page-controls">
-            <button disabled={page.number === page.pdf_pages[0]} onClick={() => { setImageError(false); setPage({ ...page, number: page.number - 1 }) }}>Previous page</button>
-            <span>PDF page {page.number}</span>
-            <button disabled={page.number === page.pdf_pages[1]} onClick={() => { setImageError(false); setPage({ ...page, number: page.number + 1 }) }}>Next page</button>
-          </div>}
-          {imageError ? <p role="alert">The source page could not be loaded. Close and try again.</p> :
-            <img key={`${page.book_id}/${page.number}`} src={`/api/page/${encodeURIComponent(page.book_id)}/${page.number}`} alt={`${page.title}, PDF page ${page.number}`} onError={() => setImageError(true)} />}
-        </aside>
-      </div>}
+      {page && <BookViewer page={page} question={searchedQuestion} close={closePage} />}
     </main>
   )
 }
