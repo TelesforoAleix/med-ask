@@ -1250,9 +1250,10 @@ candidates is incomplete evidence of failure, so inspect the unresolved count wh
 comparing results. Passing ids for out-of-sources questions are reported even when
 their pages are unresolved.
 
-`--end-to-end` repeats today's `search(k=30)` and `grade_candidates` through the
-configured endpoint, without generating answers, logging new questions, or changing
-the saved labels. Search retains its existing figure supplement. No model decides
+`--end-to-end` repeats today's `search` with `PASSAGE_CANDIDATES` (default 26)
+and `grade_candidates` through the configured endpoint, without generating answers,
+logging new questions, or changing the saved labels. Search retains its existing
+figure supplement. No model decides
 the expected pages. Run this mode when the endpoint is serving; the historical
 `--served` baseline remains independent of today's retrieval. `REAL_EVAL_FILE`
 can override the real-case path for an explicitly selected private set.
@@ -1262,7 +1263,8 @@ Measures for in-scope questions:
 - `returned`: at least one candidate's inclusive PDF range intersects an expected
   page in the expected book.
 - `passed`: at least one such candidate was graded yes.
-- `Hit@10` and `Hit@30`: the expected page appeared within those candidate ranks.
+- `Hit@10` and `Hit@<cut>`: the expected page appeared within those candidate ranks.
+  The cut is `PASSAGE_CANDIDATES` (default 26); served mode counts all logged candidates.
 
 For out-of-sources questions, `correct_not_found` means no candidate was graded
 yes; `wrongly_passed` lists the passage ids that were. `ungraded` counts candidates
@@ -1270,9 +1272,10 @@ whose grade is unknown, which is distinct from a no grade. `unresolved` counts
 served candidates whose page could not be recovered. Each question result includes
 its recorded or rerun table so results from different served versions remain visible.
 
-The gate set remains unchanged. Plain retrieval evaluation now requests thirty
-passages and reports Hit@5, Hit@10 and Hit@30 without grading. Hit@5 and the existing
-comparison rule remain the gate; Hit@30 is diagnostic. To score retrieval on the
+The gate set remains unchanged. Plain retrieval evaluation requests the app's
+`PASSAGE_CANDIDATES` count (default 26) and reports Hit@5, Hit@10 and Hit at that
+cut without grading. Hit@5 and the existing comparison rule remain the gate; Hit
+at the cut is diagnostic. To score retrieval on the
 in-scope real-case labels instead:
 
 ```sh

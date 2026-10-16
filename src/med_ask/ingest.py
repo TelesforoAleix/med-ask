@@ -35,6 +35,10 @@ from med_ask.retrieval import ingest_book, ingest_status, search
 DEFAULT_EVAL_FILE = "/data/originals/eval/med-ask-eval.v2.jsonl"
 
 
+def passage_candidates():
+    return int(os.environ.get("PASSAGE_CANDIDATES", "26"))
+
+
 def evaluate(args, parser):
     """1. Apply the requested comparison or figure gate to existing result files.
     2. Score served logs or repeat retrieval and grading for a real-case mode.
@@ -79,7 +83,11 @@ def evaluate(args, parser):
                 books,
                 logged_questions(database),
                 lambda row: recover_candidates(row, database),
-                retrieve=(lambda question: search(question, endpoint, database, k=30))
+                retrieve=(
+                    lambda question: search(
+                        question, endpoint, database, k=passage_candidates()
+                    )
+                )
                 if args.end_to_end
                 else None,
                 grade=(
@@ -87,6 +95,7 @@ def evaluate(args, parser):
                 )
                 if args.end_to_end
                 else None,
+                cut=passage_candidates(),
             )
             return 0
         endpoint = Endpoint(args.purpose, args.roles)
@@ -94,10 +103,13 @@ def evaluate(args, parser):
             eval_file,
             runs,
             books,
-            lambda question: search(question, endpoint, database, k=30),
+            lambda question: search(
+                question, endpoint, database, k=passage_candidates()
+            ),
             endpoint.purpose,
             args.status or ["confirmed"],
             roles=endpoint.roles,
+            cut=passage_candidates(),
         )
         return 0
     except EvalError as error:

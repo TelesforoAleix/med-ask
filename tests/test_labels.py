@@ -289,7 +289,7 @@ def test_served_and_end_to_end_separate_measures(owner):
         inside["returned"]
         and not inside["passed"]
         and inside["hit10"]
-        and inside["hit30"]
+        and inside["hit_cut"]
     )
     assert inside["unresolved"] == 1 and inside["ungraded"] == 1
     assert not outside["correct_not_found"] and outside["wrongly_passed"] == ["b"]
@@ -332,14 +332,14 @@ def test_served_and_end_to_end_separate_measures(owner):
     assert "Synthetic" not in str(error.value)
 
 
-def test_hit30_boundary_and_empty_real_set(tmp_path):
+def test_hit_cut_boundary_and_empty_real_set(tmp_path):
     expected = {"bio-1-en": dict(work="bio", pages={5})}
     mapping = {"bio": "bio-1-en"}
     miss = SimpleNamespace(id="miss", book_id="bio", pdf_pages=[1, 1])
     hit = SimpleNamespace(id="hit", book_id="bio", pdf_pages=[5, 5])
-    at30 = score_results([miss] * 29 + [hit], expected, mapping)
-    assert at30["hit30"] and not at30["hit10"]
-    assert not score_results([miss] * 30 + [hit], expected, mapping)["hit30"]
+    at26 = score_results([miss] * 25 + [hit], expected, mapping)
+    assert at26["hit_cut"] and not at26["hit10"]
+    assert not score_results([miss] * 26 + [hit], expected, mapping)["hit_cut"]
     lines = []
     result = run_real_eval(
         tmp_path / "absent", {}, [], None, output=lambda line, **_: lines.append(line)

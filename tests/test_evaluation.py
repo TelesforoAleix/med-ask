@@ -473,7 +473,7 @@ def cli(monkeypatch, tmp_path):
     purposes = []
 
     def search(question, endpoint, database, k):
-        assert k == 30
+        assert k == 26
         purposes.append(endpoint.purpose)
         return fake_retrieve(answers)(question)
 
@@ -647,7 +647,7 @@ def test_real_modes_cli_with_synthetic_logs(cli, monkeypatch, capsys, tmp_path, 
     calls = []
 
     def retrieve(question, endpoint, database, k):
-        assert k == 30
+        assert k == 26
         calls.append("search")
         return (
             [SimpleNamespace(id="synthetic", book_id="bio", pdf_pages=[10, 10])],
@@ -664,7 +664,7 @@ def test_real_modes_cli_with_synthetic_logs(cli, monkeypatch, capsys, tmp_path, 
     monkeypatch.setattr(generation, "grade_candidates", grade)
     code, out, err = run_cli(monkeypatch, capsys, "eval", mode)
     assert code == 0 and not err
-    assert "in_scope=1 returned=1 passed=1 Hit@10=1 Hit@30=1" in out
+    assert "in_scope=1 returned=1 passed=1 Hit@10=1 Hit@26=1" in out
     assert "Synthetic real-case question" not in out
     assert calls == (["search", "grade"] if mode == "--end-to-end" else [])
     path.unlink()
