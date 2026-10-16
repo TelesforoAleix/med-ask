@@ -19,7 +19,7 @@ The repository contains code only. Book text, passages, page images, vectors, fi
 
 ## Architecture
 
-<picture><source media="(prefers-color-scheme: dark)" srcset="docs/diagrams/architecture-dark.svg"><img alt="med-ask architecture: built search, navigation, grading, generated answers, page review, OCR and caption-indexed figures; planned figure descriptions and six books not yet indexed." src="docs/diagrams/architecture-light.svg"></picture>
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/diagrams/architecture-dark.svg"><img alt="med-ask architecture: built search, navigation, grading, generated answers, page review, OCR and caption-indexed figures; planned figure descriptions and nine books not yet indexed." src="docs/diagrams/architecture-light.svg"></picture>
 
 Solid parts are built; dashed parts are planned.
 
