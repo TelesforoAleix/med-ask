@@ -15,6 +15,7 @@ from med_ask.evaluation import (
     figure_gate,
     load_run,
     run_eval,
+    run_real_eval,
 )
 from med_ask.extract import _external_output, extract_book
 from med_ask.figures import describe_figures, figure_entries
@@ -36,8 +37,9 @@ DEFAULT_EVAL_FILE = "/data/originals/eval/med-ask-eval.v2.jsonl"
 
 def evaluate(args, parser):
     """1. Apply the requested comparison or figure gate to existing result files.
-    2. Otherwise run every eval record through the app's search for one purpose.
-    3. Report refusals by message only; question text never reaches the output.
+    2. Score served logs or repeat retrieval and grading for a real-case mode.
+    3. Otherwise run every eval record through the app's search for one purpose.
+    4. Report refusals by message only; question text never reaches the output.
     """
     eval_file = Path(os.environ.get("EVAL_FILE", DEFAULT_EVAL_FILE))
     runs = Path(os.environ.get("EVAL_RUNS_DIR", eval_file.parent / "runs"))
@@ -59,14 +61,40 @@ def evaluate(args, parser):
                 print(line, flush=True)
             return 0 if result["passed"] else 1
         database = Database(os.environ["DATABASE_URL"])
-        database.ensure()
+        if not (args.served or args.end_to_end):
+            database.ensure()
         books = load_manifest(Path(os.environ.get("SOURCES_DIR", "/data/sources")))
+        if args.served or args.end_to_end:
+            from med_ask.generation import GenerationEndpoint, grade_candidates
+            from med_ask.labels import REAL_FILE, logged_questions, recover_candidates
+
+            real_file = Path(os.environ.get("REAL_EVAL_FILE", REAL_FILE))
+            if not real_file.exists() or not real_file.read_text().strip():
+                print("Nothing labelled yet.", flush=True)
+                return 0
+            endpoint = Endpoint(args.purpose, args.roles) if args.end_to_end else None
+            generation = GenerationEndpoint() if args.end_to_end else None
+            run_real_eval(
+                real_file,
+                books,
+                logged_questions(database),
+                lambda row: recover_candidates(row, database),
+                retrieve=(lambda question: search(question, endpoint, database, k=30))
+                if args.end_to_end
+                else None,
+                grade=(
+                    lambda question, hits: grade_candidates(question, hits, generation)
+                )
+                if args.end_to_end
+                else None,
+            )
+            return 0
         endpoint = Endpoint(args.purpose, args.roles)
         run_eval(
             eval_file,
             runs,
             books,
-            lambda question: search(question, endpoint, database),
+            lambda question: search(question, endpoint, database, k=30),
             endpoint.purpose,
             args.status or ["confirmed"],
             roles=endpoint.roles,
@@ -133,6 +161,9 @@ def main():
     evaluation.add_argument(
         "--compare", nargs=2, metavar=("BASELINE", "CANDIDATE"), help="Result files"
     )
+    modes = evaluation.add_mutually_exclusive_group()
+    modes.add_argument("--served", action="store_true")
+    modes.add_argument("--end-to-end", action="store_true")
     evaluation.add_argument("--figure-gate", nargs=2, metavar=("BASELINE", "CANDIDATE"))
     evaluation.add_argument(
         "--cohort", type=Path, help="Private file containing cohort_ids"

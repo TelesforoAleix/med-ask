@@ -52,6 +52,9 @@ def create_app() -> Flask:
         from med_ask.resolutions import private_api
 
         app.register_blueprint(private_api())
+        from med_ask.labels import private_api as label_api
+
+        app.register_blueprint(label_api())
 
         @app.get("/api/private/ping")
         def private_ping():

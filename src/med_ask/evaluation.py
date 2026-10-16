@@ -19,9 +19,16 @@ STATUSES = frozenset({"draft", "pages_open", "confirmed", "retired"})
 SELECTABLE_STATUSES = STATUSES - {"retired"}
 STATES = frozenset({"open", "confirmed", "absent", "ocr_missing", "not_indexed"})
 LANGUAGES = frozenset({"en", "es", "ca"})
-TYPES = frozenset({"definition", "consequence", "interaction"})
+TYPES = frozenset({"definition", "consequence", "interaction", "unclassified"})
 SUBJECTS = frozenset(
-    {"cell_biology", "genetics", "biochemistry", "homeostasis", "outside"}
+    {
+        "cell_biology",
+        "genetics",
+        "biochemistry",
+        "homeostasis",
+        "outside",
+        "unclassified",
+    }
 )
 PAGE_TEXT = frozenset({"ok", "missing"})
 TIMING_SAMPLE = 20
@@ -47,6 +54,7 @@ class Record:
     subject: str
     expect_not_found: bool
     evidence: tuple[dict, ...]
+    log_id: str | None = None
 
 
 def _integer(value) -> bool:
@@ -123,6 +131,7 @@ def parse_record(data) -> Record:
         data["subject"],
         data["expect_not_found"],
         tuple(evidence),
+        data.get("log_id"),
     )
 
 
@@ -191,7 +200,7 @@ def scoreable_evidence(record: Record, indexed: set[str], statuses) -> dict:
 def score_results(results, evidence: dict, eval_books: dict[str, str]) -> dict:
     """1. Map each retrieved passage's manifest book to its eval book.
     2. Mark a passage as a hit when any page in its PDF range is a confirmed page.
-    3. Derive Hit@5, Hit@10, the first hit's rank, and per-book Hit@5.
+    3. Derive Hit@5, Hit@10, Hit@30, the first hit's rank, and per-book Hit@5.
     4. Count each evidence work once when a top-10 hit comes from any of its editions.
     """
     ranked = []
@@ -208,6 +217,7 @@ def score_results(results, evidence: dict, eval_books: dict[str, str]) -> dict:
     return {
         "hit5": any(r["rank"] <= 5 for r in hits),
         "hit10": any(r["rank"] <= 10 for r in hits),
+        "hit30": any(r["rank"] <= 30 for r in hits),
         "first_hit_rank": hits[0]["rank"] if hits else None,
         "books_hit5": {
             book: any(r["rank"] <= 5 and r["book"] == book for r in hits)
@@ -231,7 +241,8 @@ def _spread(values) -> dict:
 
 
 def summarise(questions: list[dict]) -> dict:
-    """1. Gate on Hit@5 over scored answerable questions; report Hit@10 beside it.
+    """1. Gate on Hit@5 over scored answerable questions;
+       report Hit@10 and Hit@30 beside it.
     2. Average work coverage at 10 over questions with evidence in two or more works.
     3. Break Hit@5 down by language, type, subject, and evidence book.
     4. Take embedding time from the first twenty retrieved questions in file order.
@@ -259,6 +270,7 @@ def summarise(questions: list[dict]) -> dict:
         "scored": len(scored),
         "hit5": sum(q["hit5"] for q in scored),
         "hit10": sum(q["hit10"] for q in scored),
+        "hit30": sum(q["hit30"] for q in scored),
         "coverage10": {
             "questions": len(multi),
             "mean": round(
@@ -442,6 +454,7 @@ def summary_lines(run: dict) -> list[str]:
     else:
         lines.append(f"Hit@5 (gate): {_rate(s['hit5'], s['scored'])}")
         lines.append(f"Hit@10: {_rate(s['hit10'], s['scored'])}")
+        lines.append(f"Hit@30: {_rate(s['hit30'], s['scored'])}")
         cov = s["coverage10"]
         lines.append(
             f"work coverage@10: mean {cov['mean']} over {cov['questions']} "
@@ -597,3 +610,120 @@ def figure_gate(baseline, candidate, cohort_ids):
         after_counts["overall"]["hit10"] >= 32 and after_counts["cohort"]["hit10"] >= 20
     )
     return result
+
+
+def run_real_eval(
+    eval_path, books, logs, recover, *, retrieve=None, grade=None, output=print
+):
+    """1. Read confirmed human labels and join them to full log ids.
+    2. Recover served candidates in logged order, or retrieve and grade today's ones.
+    3. Mark served logs with no grades unscorable; never infer a not-found result.
+    4. Score expected-page retrieval and passing hits separately from correct not-found.
+    5. Report only ids, counts and measures, including unresolved served candidates.
+    6. Return a text-free result for comparisons without changing any labels or logs.
+    """
+    from types import SimpleNamespace
+
+    records, malformed = (
+        load_eval(Path(eval_path)) if Path(eval_path).exists() else ([], [])
+    )
+    if malformed:
+        raise EvalError("Real-case file contains malformed records")
+    records = [r for r in records if r.status == "confirmed"]
+    mode = "end-to-end" if retrieve is not None else "served"
+    report = dict(
+        mode=mode,
+        in_scope=[],
+        out_of_sources=[],
+        unscorable={"in_scope": [], "out_of_sources": []},
+    )
+    if not records:
+        output("Nothing labelled yet.", flush=True)
+        return report
+    indexed = {b.eval_book for b in books.values() if b.eval_book}
+    mapping = {b.id: b.eval_book for b in books.values() if b.eval_book}
+    logs = {r["id"]: r for r in logs}
+    for record in records:
+        row = logs.get(record.log_id)
+        if row is None:
+            raise EvalError(f"Missing log for {record.id}")
+        if retrieve is None and not row.get("grades"):
+            group = "out_of_sources" if record.expect_not_found else "in_scope"
+            result = dict(id=record.id, set=group, reason="logged before grading")
+            report["unscorable"][group].append(result)
+            output(json.dumps(result, sort_keys=True), flush=True)
+            continue
+        try:
+            if retrieve is None:
+                candidates = recover(row)
+                table = row.get("vector_table")
+            else:
+                hits, table, _ = retrieve(record.question)
+                flags, _ = grade(record.question, hits)
+                candidates = [
+                    dict(
+                        id=h.id,
+                        rank=rank,
+                        book_id=h.book_id,
+                        pdf_pages=h.pdf_pages,
+                        grade=flag,
+                    )
+                    for rank, (h, flag) in enumerate(zip(hits, flags, strict=True), 1)
+                ]
+        except Exception as error:
+            raise EvalError(
+                f"Pipeline failed for {record.id} ({type(error).__name__})"
+            ) from None
+        evidence = scoreable_evidence(record, indexed, {"confirmed"})
+        if not record.expect_not_found and not evidence:
+            raise EvalError(f"No scoreable evidence for {record.id}")
+        unresolved = sum("pdf_pages" not in c for c in candidates)
+
+        def hit(candidate, evidence=evidence):
+            """1. Match a recovered candidate against confirmed pages."""
+            if "pdf_pages" not in candidate:
+                return False
+            return score_results([SimpleNamespace(**candidate)], evidence, mapping)[
+                "hit5"
+            ]
+
+        result = dict(
+            id=record.id,
+            log_id=record.log_id,
+            set="out_of_sources" if record.expect_not_found else "in_scope",
+            table=table,
+            unresolved=unresolved,
+            ungraded=sum(c.get("grade") is None for c in candidates),
+        )
+        if record.expect_not_found:
+            passed = [c["id"] for c in candidates if c.get("grade") is True]
+            result.update(correct_not_found=not passed, wrongly_passed=passed)
+            report["out_of_sources"].append(result)
+        else:
+            result.update(
+                returned=any(hit(c) for c in candidates),
+                passed=any(hit(c) for c in candidates if c.get("grade") is True),
+                hit10=any(c["rank"] <= 10 and hit(c) for c in candidates),
+                hit30=any(c["rank"] <= 30 and hit(c) for c in candidates),
+            )
+            report["in_scope"].append(result)
+        output(json.dumps(result, sort_keys=True), flush=True)
+    inside, outside = report["in_scope"], report["out_of_sources"]
+    output(
+        f"{mode}: in_scope={len(inside)} "
+        f"returned={sum(r['returned'] for r in inside)} "
+        f"passed={sum(r['passed'] for r in inside)} "
+        f"Hit@10={sum(r['hit10'] for r in inside)} "
+        f"Hit@30={sum(r['hit30'] for r in inside)} "
+        f"unscorable={len(report['unscorable']['in_scope'])} "
+        f"unresolved={sum(r['unresolved'] for r in inside)}",
+        flush=True,
+    )
+    output(
+        f"out_of_sources={len(outside)} "
+        f"correct_not_found={sum(r['correct_not_found'] for r in outside)} "
+        f"unscorable={len(report['unscorable']['out_of_sources'])} "
+        f"unresolved={sum(r['unresolved'] for r in outside)}",
+        flush=True,
+    )
+    return report
