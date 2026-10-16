@@ -50,15 +50,19 @@ def owner(tmp_path, monkeypatch):
     monkeypatch.setattr(
         labels, "logged_questions", lambda _: [logged(), logged(SECOND)]
     )
-    monkeypatch.setattr(
-        labels,
-        "recover_candidates",
-        lambda *_: [
-            dict(id="a", rank=1, grade=False, book_id="bio", pdf_pages=[1, 2]),
-            dict(id="b", rank=2, grade=True, book_id="bio", pdf_pages=[2, 3]),
-            dict(id="missing", rank=3, grade=None),
-        ],
-    )
+
+    def recover(row, database):
+        metadata = {
+            "a": dict(book_id="bio", pdf_pages=[1, 2]),
+            "b": dict(book_id="bio", pdf_pages=[2, 3]),
+            "missing": {},
+        }
+        return [
+            dict(id=g["id"], rank=rank, grade=g.get("grade"), **metadata[g["id"]])
+            for rank, g in enumerate(row.get("grades", []), 1)
+        ]
+
+    monkeypatch.setattr(labels, "recover_candidates", recover)
     monkeypatch.setattr(
         labels,
         "search",
@@ -350,7 +354,7 @@ def test_legacy_logs_are_unscorable_but_labelled_and_rerunnable(owner, monkeypat
     old = {
         **logged(),
         "grades": [],
-        "evidence": [dict(book_id="bio", pdf_pages=[1, 2])],
+        "evidence": [dict(id="a", score=0.5, label="Synthetic evidence label")],
     }
     empty = {**logged(SECOND), "grades": []}
     logs = [old, empty]

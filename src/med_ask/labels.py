@@ -89,14 +89,17 @@ def recover_candidates(row, database):
 
 def logged_suggestions(row, database):
     """1. Recover candidates when grades preserve their original order.
-    2. Otherwise keep legacy logged evidence pages without inventing grades.
+    2. Recover legacy evidence node ids from their index without inventing grades.
     """
     if row.get("grades"):
         return recover_candidates(row, database)
-    return [
-        dict(book_id=e["book_id"], pdf_pages=e["pdf_pages"])
-        for e in row.get("evidence", [])
-    ]
+    return recover_candidates(
+        {
+            **row,
+            "grades": [dict(id=e["id"], grade=None) for e in row.get("evidence", [])],
+        },
+        database,
+    )
 
 
 def read_labels(path):

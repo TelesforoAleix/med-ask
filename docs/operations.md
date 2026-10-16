@@ -1199,9 +1199,10 @@ inclusive date range and a logged question (newest first). Read its original
 question, date, language and generated answer as logged. Suggested pages put
 logged candidates graded yes first, then other logged candidates in their original
 order, then a wider search (`k=100`) on the served index. Each book/PDF page appears
-once. Logs from before grading use their saved evidence pages, without inferred
-grades. Wider suggestions use search only, with no grading or answer generation;
-if that search is unavailable, logged pages and labelling still work.
+once. Logs from before grading recover their saved evidence ids from the recorded
+index, without inferred grades. Wider suggestions use search only, with no grading
+or answer generation; if that search is unavailable, logged pages and labelling
+still work.
 
 Open a suggested page in the book viewer, navigate as needed and press **This
 page answers** to add the open PDF page to the expected pages. **Remove** removes
