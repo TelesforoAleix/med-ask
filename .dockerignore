@@ -11,4 +11,5 @@
 !frontend/vite.config.js
 !frontend/src/
 !frontend/src/*.jsx
+!frontend/src/*.js
 !frontend/src/*.css
