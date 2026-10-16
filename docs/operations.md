@@ -1191,3 +1191,100 @@ The report includes `numbered_contents_only`, entries per level and
 `chapter_entry_coverage` for chapter numbers from 1 through the highest numbered
 heading observed in extraction. This range is diagnostic, not an independently
 verified chapter total. All built files, reports and examples stay on the node.
+
+## Label real questions and score the real-case set
+
+On the tailnet, open **Label questions** beside **Resolve issues**. Choose an
+inclusive date range and a logged question (newest first). Read its original
+question, date, language and generated answer as logged. Suggested pages put
+logged candidates graded yes first, then other logged candidates in their original
+order, then a wider search (`k=100`) on the served index. Each book/PDF page appears
+once. Logs from before grading use their saved evidence pages, without inferred
+grades. Wider suggestions use search only, with no grading or answer generation;
+if that search is unavailable, logged pages and labelling still work.
+
+Open a suggested page in the book viewer, navigate as needed and press **This
+page answers** to add the open PDF page to the expected pages. **Remove** removes
+one expected page. Any expected pages make the question **in scope**. Choose
+**Out of the sources** when these books should not answer it; this clears expected
+pages. **Clear**, or removing the last expected page, returns it to **unlabelled**.
+Only the owner and user supply labels; suggestions never become labels automatically.
+
+Labels live separately from the gate set at
+`/data/originals/eval/med-ask-eval-real.v1.jsonl` (host:
+`/srv/homelab/med-ask-data/originals/eval/med-ask-eval-real.v1.jsonl`). The file is
+created on the first save. Each save locks the eval directory across workers,
+rewrites the whole file and atomically replaces it after syncing. Other questions'
+records are retained. An unlabelled question has no record. Records use schema 1,
+status `confirmed`, `unclassified` type and subject, the log's language and question,
+an id of `r` plus the first twelve UUID hex digits, and full `log_id`. They contain
+no asker identity. `language_source` is `log` for a stored language. When the log
+language is null, saving uses the app’s local, model-free `detect_language` and
+records `language_source: "detected"`; the original log remains unchanged.
+Confirmed evidence uses manifest `eval_book` ids and PDF pages;
+out-of-sources records have `expect_not_found: true` and no evidence. Never copy
+this private file or its question text off the server or into git.
+
+Both real-case modes report ids and numbers only, separately for in-scope and
+out-of-sources questions. No labels is a clean exit, including before the file exists:
+
+```sh
+docker compose --profile ingest run --rm ingest eval --served
+docker compose --profile ingest run --rm ingest eval --end-to-end
+```
+
+`--served` reports any question with empty `grades` as unscorable, by id, with
+reason `logged before grading`. Such rows are excluded from both served measure
+denominators; an unscorable count appears beside each set. They can still be
+labelled, and `--end-to-end` scores them normally. Empty grades never mean
+“nothing passed”.
+
+`--served` makes no model calls. It reads live question logs and recovers every
+candidate's book and PDF range by its node id from the question's recorded
+`vector_table`, read-only. Rank is its order in `grades`. A matching figure table,
+when present, is tried for missing ids; v2–v6 currently keep their figures in the
+same index table. Missing ids or unusable page metadata remain unresolved and are
+counted for every question. No label or page is guessed. A missed hit with unresolved
+candidates is incomplete evidence of failure, so inspect the unresolved count when
+comparing results. Passing ids for out-of-sources questions are reported even when
+their pages are unresolved.
+
+`--end-to-end` repeats today's `search(k=30)` and `grade_candidates` through the
+configured endpoint, without generating answers, logging new questions, or changing
+the saved labels. Search retains its existing figure supplement. No model decides
+the expected pages. Run this mode when the endpoint is serving; the historical
+`--served` baseline remains independent of today's retrieval. `REAL_EVAL_FILE`
+can override the real-case path for an explicitly selected private set.
+
+Measures for in-scope questions:
+
+- `returned`: at least one candidate's inclusive PDF range intersects an expected
+  page in the expected book.
+- `passed`: at least one such candidate was graded yes.
+- `Hit@10` and `Hit@30`: the expected page appeared within those candidate ranks.
+
+For out-of-sources questions, `correct_not_found` means no candidate was graded
+yes; `wrongly_passed` lists the passage ids that were. `ungraded` counts candidates
+whose grade is unknown, which is distinct from a no grade. `unresolved` counts
+served candidates whose page could not be recovered. Each question result includes
+its recorded or rerun table so results from different served versions remain visible.
+
+The gate set remains unchanged. Plain retrieval evaluation now requests thirty
+passages and reports Hit@5, Hit@10 and Hit@30 without grading. Hit@5 and the existing
+comparison rule remain the gate; Hit@30 is diagnostic. To score retrieval on the
+in-scope real-case labels instead:
+
+```sh
+docker compose --profile ingest run --rm ingest eval
+# Same retrieval diagnostics on human-labelled real cases:
+docker compose --profile ingest run --rm -e EVAL_FILE=/data/originals/eval/med-ask-eval-real.v1.jsonl ingest eval
+```
+
+Label routes register only with `PRIVATE_ROUTES_ENABLED=true`. Every
+`/api/private/label` path is 404 on `public`, with no new mounts. The list is
+`GET /api/private/label/questions` (`from` and `to` ISO dates); detail and wider
+suggestions are `GET /api/private/label/question/<log-id>` and its `/suggestions`
+child. `POST .../label` accepts `outside`, `clear`, `add` or `remove`; page actions
+also require `book_id` and `pdf_page`. Writes reject cross-origin browser requests,
+request bodies are limited to 32,000 bytes, and responses use `Cache-Control:
+no-store`. Saving a label never changes a log, source, index or public response.

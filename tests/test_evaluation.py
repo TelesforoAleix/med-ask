@@ -472,7 +472,8 @@ def cli(monkeypatch, tmp_path):
     monkeypatch.setattr(ingest, "load_manifest", lambda sources: BOOKS)
     purposes = []
 
-    def search(question, endpoint, database):
+    def search(question, endpoint, database, k):
+        assert k == 30
         purposes.append(endpoint.purpose)
         return fake_retrieve(answers)(question)
 
@@ -500,7 +501,7 @@ def test_no_question_text_in_any_output(cli, monkeypatch, capsys, tmp_path):
 
 
 def test_retrieval_failure_hides_the_question(cli, monkeypatch, capsys, tmp_path):
-    def echoing(question, endpoint, database):
+    def echoing(question, endpoint, database, k):
         if question.startswith("Synthetic"):
             raise RuntimeError(f"endpoint rejected input: {question}")
         return [], "e_synthetic_table", 0.01
@@ -514,7 +515,7 @@ def test_retrieval_failure_hides_the_question(cli, monkeypatch, capsys, tmp_path
 
 
 def test_missing_index_is_refused(cli, monkeypatch, capsys):
-    def missing(question, endpoint, database):
+    def missing(question, endpoint, database, k):
         raise NoIndex("No index yet for the current search model.", "e_table")
 
     monkeypatch.setattr(ingest, "search", missing)
@@ -615,3 +616,57 @@ def test_endpoint_roles_environment(monkeypatch, setting, expected):
         monkeypatch.setenv("EMBEDDING_ROLES", setting)
     assert Endpoint().roles is expected
     assert Endpoint(roles=not expected).roles is not expected
+
+
+@pytest.mark.parametrize("mode", ["--served", "--end-to-end"])
+def test_real_modes_cli_with_synthetic_logs(cli, monkeypatch, capsys, tmp_path, mode):
+    from types import SimpleNamespace
+    from uuid import UUID
+
+    from med_ask import generation, labels
+
+    identity = str(UUID(int=0x123456789ABCDEF00000000000000001))
+    row = dict(
+        id=identity,
+        question="Synthetic real-case question?",
+        language="en",
+        vector_table="e_v6_synthetic",
+        grades=[dict(id="synthetic", grade=True)],
+    )
+    path = tmp_path / "real.jsonl"
+    labels.save_label(path, row, "add", BOOKS, dict(book_id="bio", pdf_page=10))
+    monkeypatch.setenv("REAL_EVAL_FILE", str(path))
+    monkeypatch.setattr(labels, "logged_questions", lambda _: [row])
+    monkeypatch.setattr(
+        labels,
+        "recover_candidates",
+        lambda *_: [
+            dict(id="synthetic", rank=1, book_id="bio", pdf_pages=[10, 10], grade=True)
+        ],
+    )
+    calls = []
+
+    def retrieve(question, endpoint, database, k):
+        assert k == 30
+        calls.append("search")
+        return (
+            [SimpleNamespace(id="synthetic", book_id="bio", pdf_pages=[10, 10])],
+            "e_v6_synthetic",
+            0,
+        )
+
+    def grade(question, candidates, endpoint):
+        calls.append("grade")
+        return [True], 0
+
+    monkeypatch.setattr(ingest, "search", retrieve)
+    monkeypatch.setattr(generation, "GenerationEndpoint", lambda: object())
+    monkeypatch.setattr(generation, "grade_candidates", grade)
+    code, out, err = run_cli(monkeypatch, capsys, "eval", mode)
+    assert code == 0 and not err
+    assert "in_scope=1 returned=1 passed=1 Hit@10=1 Hit@30=1" in out
+    assert "Synthetic real-case question" not in out
+    assert calls == (["search", "grade"] if mode == "--end-to-end" else [])
+    path.unlink()
+    code, out, err = run_cli(monkeypatch, capsys, "eval", mode)
+    assert code == 0 and "Nothing labelled yet." in out

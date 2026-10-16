@@ -61,7 +61,7 @@ export function ViewerPage({ page, number, navigation, contents, contentsError, 
   </>
 }
 
-export function BookViewer({ page, question, close }) {
+export function BookViewer({ page, question, close, onAnswerPage, busy, labelNote }) {
   const [number, setNumber] = useState(page.number)
   const { navigation, error, retry } = usePageNavigation(page.book_id, number)
   const [hasNavigation, setHasNavigation] = useState(false)
@@ -109,6 +109,7 @@ export function BookViewer({ page, question, close }) {
       <div className="panel-heading"><h2 id="source-title">{page.title}</h2><button ref={closeButton} type="button" onClick={close}>Close</button></div>
       <p className="asked">{question}</p>
       <p>Opened from: {sourceLabel(page)}</p>
+      {onAnswerPage && <div><button type="button" disabled={busy} onClick={() => onAnswerPage(page.book_id, number)}>This page answers</button><p role="status">{labelNote}</p></div>}
       <ViewerPage {...{ page, number, navigation, contents, contentsError, loading, navigationError: error, retry, jump: setNumber }} navigationAvailable={navigation !== null && (hasNavigation || Boolean(navigation))} />
     </aside>
   </div>

@@ -106,3 +106,7 @@ textarea:focus-visible { outline: 3px solid #7aa991; outline-offset: 3px; }
 @media (max-width: 680px) {
   .has-quick-look { grid-template-columns: 1fr; }
 }
+
+.label-answer { white-space: pre-wrap; }
+.label-suggestions { display: flex; flex-wrap: wrap; gap: .5rem; max-height: 22rem; overflow-y: auto; }
+.label-suggestions button { text-align: left; }

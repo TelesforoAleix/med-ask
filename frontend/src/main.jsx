@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import './style.css'
 import { Resolve } from './resolve.jsx'
+import { LabelQuestions } from './label.jsx'
 import { sourceLabel, reviewLocation } from './source-label.js'
 import { EvidenceHeading } from './evidence-heading.jsx'
 import { BookViewer } from './book-viewer.jsx'
@@ -20,6 +21,7 @@ async function post(path, body) {
 function App() {
   const [privateEnabled, setPrivateEnabled] = useState(false)
   const [resolving, setResolving] = useState(false)
+  const [labelling, setLabelling] = useState(false)
   useEffect(() => {
     fetch('/api/private/ping').then(response => { if (response.ok) setPrivateEnabled(true) }).catch(() => {})
   }, [])
@@ -107,8 +109,9 @@ function App() {
         <h1>med-ask</h1>
         <p className="intro">Start with a question. Read the original passages.</p>
       </header>
-      {privateEnabled && <button type="button" onClick={() => setResolving(!resolving)}>{resolving ? 'Back to search' : 'Resolve issues'}</button>}
-      {privateEnabled && resolving ? <Resolve /> : <>
+      {privateEnabled && <button type="button" onClick={() => { setResolving(!resolving); setLabelling(false) }}>{resolving ? 'Back to search' : 'Resolve issues'}</button>}
+      {privateEnabled && <button type="button" onClick={() => { setLabelling(!labelling); setResolving(false) }}>{labelling ? 'Back to search' : 'Label questions'}</button>}
+      {privateEnabled && labelling ? <LabelQuestions /> : privateEnabled && resolving ? <Resolve /> : <>
       <form onSubmit={submit} role="search">
         <label htmlFor="question">What would you like to understand?</label>
         <div className="search-row">

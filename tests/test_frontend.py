@@ -298,3 +298,35 @@ def test_book_viewer_and_reference_rendering(tmp_path):
         """,
         tmp_path / "viewer.cjs",
     )
+
+
+def test_label_question_and_viewer_action(tmp_path):
+    run_frontend_script(
+        """
+        import React from 'react';
+        import { renderToStaticMarkup as render } from 'react-dom/server';
+        import assert from 'node:assert/strict';
+        import { LabelQuestion } from './src/label.jsx';
+        import { BookViewer } from './src/book-viewer.jsx';
+        const noop = () => {};
+        const page = {book_id:'bio', title:'Synthetic book', pdf_pages:[2,2],
+          number:2, label:'PDF 2'};
+        const detail = {question:'Synthetic question?', asked_at:'2026-10-16',
+          language:'en', label:'in scope', answer:'Synthetic generated answer.',
+          expected:[{book_id:'bio', pdf_page:2}], unresolved:1,
+          suggestions:[{...page,pdf_page:2,passed:true}]};
+        const html = render(<LabelQuestion {...{detail}} busy={false}
+          act={noop} open={noop} />);
+        for (const text of ['Out of the sources','Clear','Remove','Expected pages',
+          'Suggested pages','Passed grading','App answer — generated, as logged',
+          '1 logged candidates have unresolved pages.','Synthetic question?'])
+          assert.ok(html.includes(text), text);
+        assert.ok(html.includes('class="generated"'));
+        const plain = render(<BookViewer {...{page}} close={noop} />);
+        assert.ok(!plain.includes('This page answers'));
+        const labelling = render(<BookViewer {...{page}} close={noop}
+          onAnswerPage={noop} />);
+        assert.ok(labelling.includes('This page answers'));
+        """,
+        tmp_path / "labels.cjs",
+    )
