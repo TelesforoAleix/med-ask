@@ -197,10 +197,11 @@ def scoreable_evidence(record: Record, indexed: set[str], statuses) -> dict:
     return books
 
 
-def score_results(results, evidence: dict, eval_books: dict[str, str]) -> dict:
+def score_results(results, evidence: dict, eval_books: dict[str, str], cut=26) -> dict:
     """1. Map each retrieved passage's manifest book to its eval book.
     2. Mark a passage as a hit when any page in its PDF range is a confirmed page.
-    3. Derive Hit@5, Hit@10, Hit@30, the first hit's rank, and per-book Hit@5.
+    3. Derive Hit@5, Hit@10, Hit at the candidate cut, the first hit's rank,
+       and per-book Hit@5.
     4. Count each evidence work once when a top-10 hit comes from any of its editions.
     """
     ranked = []
@@ -217,7 +218,7 @@ def score_results(results, evidence: dict, eval_books: dict[str, str]) -> dict:
     return {
         "hit5": any(r["rank"] <= 5 for r in hits),
         "hit10": any(r["rank"] <= 10 for r in hits),
-        "hit30": any(r["rank"] <= 30 for r in hits),
+        "hit_cut": any(r["rank"] <= cut for r in hits),
         "first_hit_rank": hits[0]["rank"] if hits else None,
         "books_hit5": {
             book: any(r["rank"] <= 5 and r["book"] == book for r in hits)
@@ -242,7 +243,7 @@ def _spread(values) -> dict:
 
 def summarise(questions: list[dict]) -> dict:
     """1. Gate on Hit@5 over scored answerable questions;
-       report Hit@10 and Hit@30 beside it.
+       report Hit@10 and Hit at the candidate cut beside it.
     2. Average work coverage at 10 over questions with evidence in two or more works.
     3. Break Hit@5 down by language, type, subject, and evidence book.
     4. Take embedding time from the first twenty retrieved questions in file order.
@@ -270,7 +271,7 @@ def summarise(questions: list[dict]) -> dict:
         "scored": len(scored),
         "hit5": sum(q["hit5"] for q in scored),
         "hit10": sum(q["hit10"] for q in scored),
-        "hit30": sum(q["hit30"] for q in scored),
+        "hit_cut": sum(q["hit_cut"] for q in scored),
         "coverage10": {
             "questions": len(multi),
             "mean": round(
@@ -306,6 +307,7 @@ def run_eval(
     output=print,
     *,
     roles=False,
+    cut=26,
 ):
     """1. Load the eval file, setting malformed records aside by id.
     2. Map manifest books to eval books; unmapped eval books count as not indexed.
@@ -342,7 +344,7 @@ def run_eval(
             item for item in results if getattr(item, "kind", "content") != "figure"
         ]
         evidence = scoreable_evidence(record, indexed, statuses)
-        score = score_results(results, evidence, eval_books)
+        score = score_results(results, evidence, eval_books, cut)
         flags = score.pop("hits")
         question = {
             "id": record.id,
@@ -387,6 +389,7 @@ def run_eval(
         "purpose": purpose,
         "roles": roles,
         "ranking_scope": "passages",
+        "cut": cut,
         "table": table,
         "statuses": sorted(statuses),
         "eval_books": dict(sorted(eval_books.items())),
@@ -454,7 +457,8 @@ def summary_lines(run: dict) -> list[str]:
     else:
         lines.append(f"Hit@5 (gate): {_rate(s['hit5'], s['scored'])}")
         lines.append(f"Hit@10: {_rate(s['hit10'], s['scored'])}")
-        lines.append(f"Hit@30: {_rate(s['hit30'], s['scored'])}")
+        hit_cut = s.get("hit_cut", s.get("hit30", 0))
+        lines.append(f"Hit@{run.get('cut', 30)}: {_rate(hit_cut, s['scored'])}")
         cov = s["coverage10"]
         lines.append(
             f"work coverage@10: mean {cov['mean']} over {cov['questions']} "
@@ -613,7 +617,7 @@ def figure_gate(baseline, candidate, cohort_ids):
 
 
 def run_real_eval(
-    eval_path, books, logs, recover, *, retrieve=None, grade=None, output=print
+    eval_path, books, logs, recover, *, retrieve=None, grade=None, output=print, cut=26
 ):
     """1. Read confirmed human labels and join them to full log ids.
     2. Recover served candidates in logged order, or retrieve and grade today's ones.
@@ -704,7 +708,10 @@ def run_real_eval(
                 returned=any(hit(c) for c in candidates),
                 passed=any(hit(c) for c in candidates if c.get("grade") is True),
                 hit10=any(c["rank"] <= 10 and hit(c) for c in candidates),
-                hit30=any(c["rank"] <= 30 and hit(c) for c in candidates),
+                hit_cut=any(
+                    (retrieve is None or c["rank"] <= cut) and hit(c)
+                    for c in candidates
+                ),
             )
             report["in_scope"].append(result)
         output(json.dumps(result, sort_keys=True), flush=True)
@@ -714,7 +721,7 @@ def run_real_eval(
         f"returned={sum(r['returned'] for r in inside)} "
         f"passed={sum(r['passed'] for r in inside)} "
         f"Hit@10={sum(r['hit10'] for r in inside)} "
-        f"Hit@30={sum(r['hit30'] for r in inside)} "
+        f"Hit@{cut}={sum(r.get('hit_cut', r.get('hit30', False)) for r in inside)} "
         f"unscorable={len(report['unscorable']['in_scope'])} "
         f"unresolved={sum(r['unresolved'] for r in inside)}",
         flush=True,
