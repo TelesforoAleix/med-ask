@@ -82,6 +82,61 @@ def test_rejects_uppercase_data_extension(tmp_path):
     assert check_paths(tmp_path, ["BOOK.PDF"])
 
 
+@pytest.mark.parametrize(
+    "name",
+    [
+        ".env",
+        ".env.local",
+        "nested/.env.example",
+        "nested/.ENV",
+        "nested/id_ed25519",
+        "sources/book.txt",
+        "originals/questions.txt",
+        "navigation/book.txt",
+        "eval/questions.txt",
+        "feedback/comments.txt",
+        "dist/app.js",
+        "frontend/node_modules/package/index.js",
+        ".venv/pyvenv.cfg",
+        "nested/DATA/pages.txt",
+    ],
+)
+def test_rejects_private_and_generated_paths(tmp_path, name):
+    path = tmp_path / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("synthetic")
+    assert check_paths(tmp_path, [name])
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        b"https://synthetic.tail.ts" + b".net/api",
+        b"/" + b"Users/synthetic/project/",
+        b"/" + b"home/synthetic/project/",
+        b"synthetic@" + b"private.test",
+    ],
+)
+def test_rejects_private_identifiers_without_printing_values(tmp_path, content):
+    (tmp_path / "notes.md").write_bytes(content)
+    findings = check_paths(tmp_path, ["notes.md"])
+    assert findings
+    assert content.decode() not in findings[0]
+
+
+def test_accepts_root_environment_example(tmp_path):
+    (tmp_path / ".env.example").write_text("MODEL_API_KEY=unused\n")
+    assert check_paths(tmp_path, [".env.example"]) == []
+
+
+@pytest.mark.parametrize(
+    "domain", ["example.com", "example.net", "example.org", "example.invalid"]
+)
+def test_accepts_example_email_domains(tmp_path, domain):
+    (tmp_path / "example.py").write_text("synthetic@" + domain)
+    assert check_paths(tmp_path, ["example.py"]) == []
+
+
 def test_checks_tracked_files_and_returns_failure(tmp_path):
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     (tmp_path / "app.py").write_text("# code")
