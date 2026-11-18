@@ -1,34 +1,53 @@
 # med-ask
 
-Search across medical textbooks for the original passages behind an answer. med-ask keeps source evidence and generated text visibly separate, and links evidence back to its book pages.
+Search across medical textbooks that returns the original passages, with book and page, before any generated answer.
 
-> [!WARNING]
-> **In development.** Four of 13 books are indexed today. Search results and generated answers may change as the remaining books are added in stages.
+> [!NOTE]
+> **In use.** Four of the 13 books are indexed. The other nine are added in stages. Figure descriptions are not built.
 
-## Overview
+## Why it exists
 
-Built for a medical student working across 13 textbooks and about 12,500 pages. The public site is behind Cloudflare Access; private issue-resolution routes are served only on the tailnet.
+A medical student works across 13 textbooks, about 12,500 pages. They do not trust a general chatbot to stay grounded in those books. A fluent answer is no use if they cannot see where it came from. I built med-ask for them.
 
-- **Search:** searches four books, two in English and two in Spanish. It returns original passages with the book, PDF page and printed page, grades candidates for relevance, then writes a short answer labelled as generated and apart from the sources. Open translation is cached.
-- **Figures:** indexes figures as separate entries by printed caption. Passages link to figures they mention; opening one shows its whole page. In one atlas, each lettered panel has its own entry. Figure descriptions are not built.
+## What it does
+
+- **Search:** returns the original passages with the book, the PDF page and the printed page. Two of the indexed books are in English and two are in Spanish.
+- **Grading:** a model grades each candidate passage for relevance before it is shown.
+- **Answer:** a short generated answer, labelled as generated and kept apart from the sources.
+- **Figures:** figures are indexed by their printed caption. Opening a figure shows its whole page.
 - **Navigation:** figure, table, section, chapter and page references link to a quick look. **Review source** opens a book viewer with every page, breadcrumbs and a contents tree.
-- **Scanned pages:** a local vision model on a Mac reads scanned pages through an OpenAI-compatible endpoint. Doubtful pages are marked “from OCR — check the page”. A private **Resolve issues** screen on the tailnet lets the owner correct them.
-- **Indexes:** indexes are versioned with `INDEX_VERSION`. A new index is switched in only after a retrieval evaluation shows it is no worse.
+- **Scanned pages:** a local vision model on a Mac reads scanned pages. Doubtful pages are marked “from OCR — check the page”.
 
-The repository contains code only. Book text, passages, page images, vectors, figure and navigation data, evaluation questions, question logs, emails, secrets and `.env` files stay outside it. The [no-data guard](scripts/check_no_data.py) and CI enforce this rule; CI also runs gitleaks, and tests use synthetic content.
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/diagrams/architecture-dark.svg">
+  <img alt="Architecture: the student's browser reaches the public site behind an access gate, then the Flask app for search, grading, the generated answer and the book viewer. The app uses Postgres with pgvector and the model endpoint on Home Lab (hosted models and a local vision model on a Mac); figure descriptions and the nine remaining books are planned." src="docs/diagrams/architecture-light.svg" width="100%">
+</picture>
 
-## Architecture
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/diagrams/question-dark.svg">
+  <img alt="One question, in lanes Student, med-ask and Models: the student asks, med-ask retrieves candidate passages and a model grades them. If no relevant passage is found, med-ask says what is not covered; otherwise a model writes a short answer labelled as generated, med-ask shows the sources with book and page, and the student opens the page in the viewer." src="docs/diagrams/question-light.svg" width="100%">
+</picture>
 
-<picture><source media="(prefers-color-scheme: dark)" srcset="docs/diagrams/architecture-dark.svg"><img alt="med-ask architecture: built search, navigation, grading, generated answers, page review, OCR and caption-indexed figures; planned figure descriptions and nine books not yet indexed." src="docs/diagrams/architecture-light.svg"></picture>
+## How it is built
 
-Solid parts are built; dashed parts are planned.
+- Flask and Gunicorn serve the React 19 + Vite interface and the API from one container.
+- PyMuPDF extracts the pages. LlamaIndex owns indexing and retrieval on Postgres with pgvector.
+- The app asks for models by purpose (`chat`, `embed`, `grade`, `vision`) through an OpenAI-compatible endpoint. The base URL and key come from the environment.
+- It runs on [Home Lab](https://github.com/TelesforoAleix/homelab-v2), which provides the model endpoint.
 
-- Flask + Gunicorn serves the React 19 + Vite interface and API.
-- PyMuPDF extracts pages; LlamaIndex owns indexing and retrieval in Postgres + pgvector. Index versions are evaluated before switching.
-- Models use purposes such as `chat`, `embed`, `grade` and `vision` through an OpenAI-compatible endpoint, with its base URL and key supplied by the environment.
-- Scanned-page OCR uses a local vision model on a Mac. Figures are indexed from printed captions; generated figure descriptions are not part of search.
+## What I designed and decided
 
-## Quick start
+- **Sources first, generated text apart.** I chose to show the original passages as the main result. The generated answer is always labelled and kept visibly apart from them.
+- **Code only in the repository.** Book text, passages, page images, vectors, figure and navigation data, evaluation questions, question logs and secrets stay outside it. The [no-data guard](scripts/check_no_data.py) and CI enforce this rule. Tests use synthetic content.
+- **Evaluate before switching.** Indexes are versioned with `INDEX_VERSION`. A new index is switched in only after a retrieval evaluation shows it is no worse.
+- **Evaluation from real use.** Evaluation questions are labelled from questions the student really asked.
+
+## Where it is going
+
+- Index the nine remaining books, in stages.
+- Figure descriptions, so that figures can be found by what they show, not only by caption.
+
+## For agents and operators
 
 ### Local checks
 
@@ -60,20 +79,23 @@ curl --fail http://127.0.0.1:8100/api/health
 docker compose down
 ```
 
-Open `http://127.0.0.1:8100/` on that host. Flask serves the compiled React app and `/api/` from one container and origin, using Gunicorn as the WSGI server. `/api/health` returns `{"postgres":"ok","vector":"ok"}` when Postgres is reachable and its vector extension exists; otherwise it returns HTTP 503. Unknown API routes return 404. The app uses an OpenAI-compatible model endpoint configured through environment variables.
+Open `http://127.0.0.1:8100/` on that host. Flask serves the compiled React app and `/api/` from one container and origin, using Gunicorn as the WSGI server. `/api/health` returns `{"postgres":"ok","vector":"ok"}` when Postgres is reachable and its vector extension exists; otherwise it returns HTTP 503. Unknown API routes return 404.
 
-## Project structure
+In production the public site is behind Cloudflare Access. Private issue-resolution and labelling routes are served only on the tailnet.
+
+### Project structure
 
 ```text
-src/med_ask/  # Flask app and RAG core
-frontend/     # React interface and Vite build
-deploy/       # Systemd service and timer units
-scripts/      # Repository checks
-postgres/     # Database initialization
-tests/        # Automated tests
+src/med_ask/   # Flask app and RAG core
+frontend/      # React interface and Vite build
+deploy/        # Systemd service and timer units
+scripts/       # Repository checks
+postgres/      # Database initialization
+tests/         # Automated tests
+docs/diagrams/ # README diagrams (light and dark SVG)
 ```
 
-The corpus has 13 books; four are indexed, and the remaining nine are planned for staged addition. See the [operator runbook](docs/operations.md) for deployment, access, indexing, search and retrieval evaluation.
+See the [operator runbook](docs/operations.md) for deployment, access, indexing, search, question labelling and retrieval evaluation. Repository rules for agents are in [AGENTS.md](AGENTS.md).
 
 ## Licence
 

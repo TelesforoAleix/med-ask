@@ -12,6 +12,10 @@ Sources/
 # Exact diagram paths only (see DIAGRAM_PATHS in scripts/check_no_data.py)
 !docs/diagrams/architecture-light.svg
 !docs/diagrams/architecture-dark.svg
+!docs/diagrams/question-light.svg
+!docs/diagrams/question-dark.svg
+!docs/diagrams/question-light.svg
+!docs/diagrams/question-dark.svg
 *.ico
 *.heic
 .env
