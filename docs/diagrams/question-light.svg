@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" version="1.1" viewBox="0 0 1200 470" width="1200" height="470" role="img" aria-labelledby="q-light-title q-light-desc">
+<title id="q-light-title">One question in med-ask</title>
+<desc id="q-light-desc">BPMN process with lanes Student, med-ask and Models. The student asks a question; med-ask retrieves candidate passages; a model grades relevance. If no relevant passages are found, med-ask says what is not covered. Otherwise a model writes a short answer labelled as generated, med-ask shows the sources with book and page, and the student opens the page in the viewer.</desc>
+<defs>
+<marker id="q-light-main" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#FF4D00"/></marker>
+<marker id="q-light-alt" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#656560"/></marker>
+</defs>
+<rect x="0" y="0" width="1200" height="470" fill="#F2F2EF"/>
+<text x="40" y="44" font-family='"SFMono-Regular", Consolas, monospace' font-size="12" font-weight="400" fill="#656560" text-anchor="start" letter-spacing="1.2">MED-ASK · ONE QUESTION</text>
+<line x1="40" y1="70" x2="1160" y2="70" stroke="#171717" stroke-width="1"/>
+<line x1="40" y1="170" x2="1160" y2="170" stroke="#CDCDC7" stroke-width="1"/>
+<text x="52" y="96" font-family='"SFMono-Regular", Consolas, monospace' font-size="12" font-weight="400" fill="#656560" text-anchor="start" letter-spacing="1.2">STUDENT</text>
+<line x1="40" y1="350" x2="1160" y2="350" stroke="#CDCDC7" stroke-width="1"/>
+<text x="52" y="196" font-family='"SFMono-Regular", Consolas, monospace' font-size="12" font-weight="400" fill="#656560" text-anchor="start" letter-spacing="1.2">MED-ASK</text>
+<line x1="40" y1="450" x2="1160" y2="450" stroke="#171717" stroke-width="1"/>
+<text x="52" y="376" font-family='"SFMono-Regular", Consolas, monospace' font-size="12" font-weight="400" fill="#656560" text-anchor="start" letter-spacing="1.2">MODELS</text>
+<line x1="130" y1="70" x2="130" y2="450" stroke="#CDCDC7" stroke-width="1"/>
+<circle cx="160" cy="120" r="13" fill="#F2F2EF" stroke="#171717" stroke-width="1"/>
+<circle cx="1150" cy="120" r="13" fill="#F2F2EF" stroke="#171717" stroke-width="3"/>
+<circle cx="992" cy="215" r="13" fill="#F2F2EF" stroke="#171717" stroke-width="3"/>
+<rect x="195.0" y="92.0" width="130" height="56" rx="3" fill="#F2F2EF" stroke="#171717" stroke-width="1"/>
+<text x="260" y="125" font-family='"Helvetica Neue", Helvetica, Arial, sans-serif' font-size="14" font-weight="400" fill="#171717" text-anchor="middle">Ask a question</text>
+<rect x="350.0" y="272.0" width="160" height="56" rx="3" fill="#F2F2EF" stroke="#171717" stroke-width="1"/>
+<text x="430" y="297" font-family='"Helvetica Neue", Helvetica, Arial, sans-serif' font-size="14" font-weight="400" fill="#171717" text-anchor="middle">Retrieve</text>
+<text x="430" y="313" font-family='"Helvetica Neue", Helvetica, Arial, sans-serif' font-size="14" font-weight="400" fill="#171717" text-anchor="middle">candidate passages</text>
+<rect x="535.0" y="372.0" width="130" height="56" rx="3" fill="#F2F2EF" stroke="#171717" stroke-width="1"/>
+<text x="600" y="397" font-family='"Helvetica Neue", Helvetica, Arial, sans-serif' font-size="14" font-weight="400" fill="#171717" text-anchor="middle">Grade</text>
+<text x="600" y="413" font-family='"Helvetica Neue", Helvetica, Arial, sans-serif' font-size="14" font-weight="400" fill="#171717" text-anchor="middle">relevance</text>
+<rect x="785.0" y="187.0" width="170" height="56" rx="3" fill="#F2F2EF" stroke="#171717" stroke-width="1"/>
+<text x="870" y="212" font-family='"Helvetica Neue", Helvetica, Arial, sans-serif' font-size="14" font-weight="400" fill="#171717" text-anchor="middle">Say what is</text>
+<text x="870" y="228" font-family='"Helvetica Neue", Helvetica, Arial, sans-serif' font-size="14" font-weight="400" fill="#171717" text-anchor="middle">not covered</text>
+<rect x="785.0" y="372.0" width="170" height="56" rx="3" fill="#F2F2EF" stroke="#171717" stroke-width="1"/>
+<text x="870" y="397" font-family='"Helvetica Neue", Helvetica, Arial, sans-serif' font-size="14" font-weight="400" fill="#171717" text-anchor="middle">Write a short answer,</text>
+<text x="870" y="413" font-family='"Helvetica Neue", Helvetica, Arial, sans-serif' font-size="14" font-weight="400" fill="#171717" text-anchor="middle">labelled as generated</text>
+<rect x="970.0" y="272.0" width="160" height="56" rx="3" fill="#F2F2EF" stroke="#171717" stroke-width="1"/>
+<text x="1050" y="297" font-family='"Helvetica Neue", Helvetica, Arial, sans-serif' font-size="14" font-weight="400" fill="#171717" text-anchor="middle">Show sources</text>
+<text x="1050" y="313" font-family='"Helvetica Neue", Helvetica, Arial, sans-serif' font-size="14" font-weight="400" fill="#171717" text-anchor="middle">with book and page</text>
+<rect x="985.0" y="92.0" width="130" height="56" rx="3" fill="#F2F2EF" stroke="#171717" stroke-width="1"/>
+<text x="1050" y="117" font-family='"Helvetica Neue", Helvetica, Arial, sans-serif' font-size="14" font-weight="400" fill="#171717" text-anchor="middle">Open the page</text>
+<text x="1050" y="133" font-family='"Helvetica Neue", Helvetica, Arial, sans-serif' font-size="14" font-weight="400" fill="#171717" text-anchor="middle">in the viewer</text>
+<path d="M720,274 L746,300 L720,326 L694,300 z" fill="#F2F2EF" stroke="#FF4D00" stroke-width="1.5"/>
+<text x="682" y="296" font-family='"Helvetica Neue", Helvetica, Arial, sans-serif' font-size="14" font-weight="600" fill="#171717" text-anchor="end">Relevant</text>
+<text x="682" y="313" font-family='"Helvetica Neue", Helvetica, Arial, sans-serif' font-size="14" font-weight="600" fill="#171717" text-anchor="end">passages found?</text>
+<path d="M173,120 H193" fill="none" stroke="#171717" stroke-width="1" marker-end="url(#q-light-main)"/>
+<path d="M325,120 H430 V270" fill="none" stroke="#171717" stroke-width="1" marker-end="url(#q-light-main)"/>
+<path d="M430,328 V400 H533" fill="none" stroke="#171717" stroke-width="1" marker-end="url(#q-light-main)"/>
+<path d="M665,400 H720 V328" fill="none" stroke="#171717" stroke-width="1" marker-end="url(#q-light-main)"/>
+<path d="M746,300 H870 V370" fill="none" stroke="#171717" stroke-width="1" marker-end="url(#q-light-main)"/>
+<text x="756" y="292" font-family='"Helvetica Neue", Helvetica, Arial, sans-serif' font-size="14" font-weight="400" fill="#656560" text-anchor="start">Yes</text>
+<path d="M720,274 V215 H783" fill="none" stroke="#656560" stroke-width="1" marker-end="url(#q-light-alt)"/>
+<text x="728" y="252" font-family='"Helvetica Neue", Helvetica, Arial, sans-serif' font-size="14" font-weight="400" fill="#656560" text-anchor="start">No</text>
+<path d="M955,215 H977" fill="none" stroke="#656560" stroke-width="1" marker-end="url(#q-light-alt)"/>
+<path d="M955,400 H1050 V330" fill="none" stroke="#171717" stroke-width="1" marker-end="url(#q-light-main)"/>
+<path d="M1050,272 V150" fill="none" stroke="#171717" stroke-width="1" marker-end="url(#q-light-main)"/>
+<path d="M1115,120 H1135" fill="none" stroke="#171717" stroke-width="1" marker-end="url(#q-light-main)"/>
+</svg>

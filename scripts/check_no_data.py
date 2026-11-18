@@ -42,6 +42,8 @@ DIAGRAM_PATHS = frozenset(
     {
         "docs/diagrams/architecture-light.svg",
         "docs/diagrams/architecture-dark.svg",
+        "docs/diagrams/question-light.svg",
+        "docs/diagrams/question-dark.svg",
     }
 )
 SIGNATURES = (b"%PDF", b"\x89PNG\r\n\x1a\n", b"\xff\xd8\xff", b"GIF87a", b"GIF89a")
