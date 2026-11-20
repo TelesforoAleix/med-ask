@@ -9009,7 +9009,8 @@
             31
           ]
         }
-      ]
+      ],
+      "contract": null
     },
     {
       "id": "public-retrieval",
@@ -9041,7 +9042,8 @@
             31
           ]
         }
-      ]
+      ],
+      "contract": null
     },
     {
       "id": "public-generation",
@@ -9094,7 +9096,8 @@
             31
           ]
         }
-      ]
+      ],
+      "contract": null
     },
     {
       "id": "public-navigation",
@@ -9126,7 +9129,8 @@
             43
           ]
         }
-      ]
+      ],
+      "contract": null
     },
     {
       "id": "navigation-extraction",
@@ -9158,7 +9162,8 @@
             459
           ]
         }
-      ]
+      ],
+      "contract": null
     },
     {
       "id": "private-tools-retrieval",
@@ -9183,7 +9188,8 @@
             364
           ]
         }
-      ]
+      ],
+      "contract": null
     },
     {
       "id": "documentation-schemas",
@@ -9232,7 +9238,8 @@
             214
           ]
         }
-      ]
+      ],
+      "contract": "claims"
     }
   ],
   "contracts": [
