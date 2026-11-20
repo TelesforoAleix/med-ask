@@ -65,7 +65,8 @@ A version that adds or changes figures must also keep passage recall perfect at 
 docker compose --profile ingest run --name med-ask-<version>-gate ingest eval --figure-gate <baseline-run.json> <candidate-run.json> --cohort /data/originals/eval/fig-work/cohort.json
 ```
 
-It accepts only v4/v5 or v5/v6 pairs, eval set 2, `embed-large` and roles off. Both runs must
+It accepts only v4/v5 or v5/v6 pairs whose tables match those versions, eval set 2,
+`embed-large` and roles off; a v5/v6 pair must also rank passages only. Both runs must
 score the same 32 ids, and the cohort file's 20 `cohort_ids` must be among them; select the
 cohort by expected books, never by outcomes. The baseline must reach Hit@10 32/32 and 20/20 on
 the cohort, and the candidate passes only by reaching both too. It reports Hit@5 and Hit@10

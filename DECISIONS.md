@@ -51,3 +51,17 @@ repository can prove are kept here, as recorded on that date:
   stopped.
 - **Search caps.** `PASSAGE_CANDIDATES` stays at least 10 so the figure gate's Hit@10 stays
   measurable; figures follow passages so they never displace one.
+
+## 2026-11-20: The claims file and single-owner facts
+
+- **Claims contract.** med-ask adopts Factory's `claims` contract at version 1: Factory
+  provides the schema and its `docs-verify` reads `docs/claims.json`. The link test only
+  proves that cited paths and lines exist; whether a cited line supports its claim is
+  Factory's check.
+- **One owner per fact.** Embedding defaults live in the server environment table, the
+  search kinds in `extraction.md`, figure slots in `figures.md` and table protection in the
+  database contract; other documents link to them. A change to one fact then edits one
+  document.
+- **Documents follow the code.** Where a document contradicted the code, as for the
+  embedding dimensions, the password default, the watermark words and the legacy
+  inherited-OCR join, the document was corrected and no code was changed.

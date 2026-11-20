@@ -42,6 +42,7 @@ The README diagrams ([architecture](docs/diagrams/architecture-light.svg),
 | `private-tools` | Resolve and label screens' APIs (`resolutions.py`, `resolve_cache.py`, `labels.py`) | Inside `app` only | [resolve.md](docs/resolve.md), [labelling.md](docs/labelling.md) |
 | `service-unit` | `deploy/med-ask.service`, which pulls `main` and runs Compose | systemd on the server | [operations.md](docs/operations.md#install-the-service) |
 | `export-units` | `deploy/med-ask-export.service` and its daily timer | systemd on the server | [operations.md](docs/operations.md#question-log-export) |
+| `documentation` | The core documents and `docs/claims.json`, whose cited lines `tests/test_docs_links.py` checks | Repository files, checked in CI | [contracts.md](docs/contracts.md#claims) |
 
 ## What each library owns
 
@@ -81,3 +82,4 @@ other purpose; Home Lab decides where each purpose runs.
 |---|---|---|
 | [Home Lab](https://github.com/TelesforoAleix/homelab-v2) | `app`, `public` and `ingest` call its gateway over `homelab-models` | [model-gateway](docs/contracts.md#model-gateway) |
 | [Home Lab](https://github.com/TelesforoAleix/homelab-v2) | `service-unit` starts with its data volumes and `homelab.service` | [host-units](docs/contracts.md#host-units) |
+| [Factory](https://github.com/TelesforoAleix/factory) | Its `schemas` define the claims file that `documentation` keeps, and its `docs-verify` reads that file | [claims](docs/contracts.md#claims) |

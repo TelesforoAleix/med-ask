@@ -10,8 +10,8 @@ documents in the [AGENTS.md document map](../AGENTS.md#document-map). Local chec
 
 Postgres publishes no port and, unless `POSTGRES_DATA_PATH` is set, stores its data in the
 `postgres-data` named volume. Its initialization script only creates the vector extension, and
-only on a new volume. `docker compose down` preserves volumes. CI's Compose job builds, starts,
-checks the page, health and the private/public split, then removes its throwaway volume.
+only on a new volume. `docker compose down` preserves volumes. CI's Compose job
+([AGENTS.md](../AGENTS.md#ci-commands)) removes its throwaway volume when it finishes.
 
 Outside Compose, the app reads `DATABASE_URL` and optionally `FRONTEND_DIST` from the
 environment. Private routes are on only when `PRIVATE_ROUTES_ENABLED` is exactly `true`.
