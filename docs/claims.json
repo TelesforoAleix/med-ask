@@ -660,7 +660,7 @@
         42,
         42
       ],
-      "text": "The resolve and label APIs are registered only when private routes are enabled, which Compose does only in app.",
+      "text": "The resolve and label APIs are registered only when private routes are enabled; compose enables them in app and disables them in public.",
       "sources": [
         {
           "path": "src/med_ask/__init__.py",
@@ -672,8 +672,29 @@
         {
           "path": "compose.yaml",
           "lines": [
+            2,
+            2
+          ]
+        },
+        {
+          "path": "compose.yaml",
+          "lines": [
             9,
             9
+          ]
+        },
+        {
+          "path": "compose.yaml",
+          "lines": [
+            29,
+            29
+          ]
+        },
+        {
+          "path": "compose.yaml",
+          "lines": [
+            34,
+            34
           ]
         }
       ]
@@ -685,7 +706,7 @@
         41,
         41
       ],
-      "text": "Navigation is built by the ingest command navigate and read by app and public, which mount it read-only.",
+      "text": "ingest has a navigate command that builds navigation files; app and public mount /data/navigation read-only, and ingest mounts it read-write.",
       "sources": [
         {
           "path": "src/med_ask/ingest.py",
@@ -702,10 +723,10 @@
           ]
         },
         {
-          "path": "src/med_ask/__init__.py",
+          "path": "compose.yaml",
           "lines": [
-            28,
-            28
+            2,
+            2
           ]
         },
         {
@@ -718,8 +739,22 @@
         {
           "path": "compose.yaml",
           "lines": [
+            29,
+            29
+          ]
+        },
+        {
+          "path": "compose.yaml",
+          "lines": [
             43,
             43
+          ]
+        },
+        {
+          "path": "compose.yaml",
+          "lines": [
+            48,
+            48
           ]
         },
         {
@@ -1202,13 +1237,27 @@
         83,
         83
       ],
-      "text": "app, public and ingest join the external homelab-models network and call the gateway at MODEL_BASE_URL.",
+      "text": "app, public and ingest join the external homelab-models network and set MODEL_BASE_URL, defaulting to http://litellm:4000/v1.",
       "sources": [
         {
           "path": "compose.yaml",
           "lines": [
+            2,
+            2
+          ]
+        },
+        {
+          "path": "compose.yaml",
+          "lines": [
             7,
-            10
+            7
+          ]
+        },
+        {
+          "path": "compose.yaml",
+          "lines": [
+            29,
+            29
           ]
         },
         {
@@ -1221,6 +1270,13 @@
         {
           "path": "compose.yaml",
           "lines": [
+            48,
+            48
+          ]
+        },
+        {
+          "path": "compose.yaml",
+          "lines": [
             53,
             53
           ]
@@ -1228,7 +1284,35 @@
         {
           "path": "compose.yaml",
           "lines": [
+            10,
+            10
+          ]
+        },
+        {
+          "path": "compose.yaml",
+          "lines": [
+            35,
+            35
+          ]
+        },
+        {
+          "path": "compose.yaml",
+          "lines": [
+            55,
+            55
+          ]
+        },
+        {
+          "path": "compose.yaml",
+          "lines": [
             105,
+            105
+          ]
+        },
+        {
+          "path": "compose.yaml",
+          "lines": [
+            106,
             106
           ]
         }
@@ -1523,20 +1607,13 @@
         51,
         52
       ],
-      "text": "Compose passes environment settings to app, public, ingest, postgres and cloudflared.",
+      "text": "The compose services app, public, ingest, cloudflared and postgres each take settings from .env variables.",
       "sources": [
         {
           "path": "compose.yaml",
           "lines": [
-            85,
-            85
-          ]
-        },
-        {
-          "path": "compose.yaml",
-          "lines": [
-            73,
-            73
+            2,
+            2
           ]
         },
         {
@@ -1549,6 +1626,13 @@
         {
           "path": "compose.yaml",
           "lines": [
+            29,
+            29
+          ]
+        },
+        {
+          "path": "compose.yaml",
+          "lines": [
             39,
             39
           ]
@@ -1556,8 +1640,43 @@
         {
           "path": "compose.yaml",
           "lines": [
+            48,
+            48
+          ]
+        },
+        {
+          "path": "compose.yaml",
+          "lines": [
             59,
             59
+          ]
+        },
+        {
+          "path": "compose.yaml",
+          "lines": [
+            68,
+            68
+          ]
+        },
+        {
+          "path": "compose.yaml",
+          "lines": [
+            73,
+            73
+          ]
+        },
+        {
+          "path": "compose.yaml",
+          "lines": [
+            79,
+            79
+          ]
+        },
+        {
+          "path": "compose.yaml",
+          "lines": [
+            85,
+            85
           ]
         }
       ]
@@ -1829,7 +1948,7 @@
         85,
         86
       ],
-      "text": "The claims file names this repository as the one it documents.",
+      "text": "docs/claims.json names TelesforoAleix/med-ask as the repository it documents.",
       "sources": [
         {
           "path": "docs/claims.json",
@@ -4952,7 +5071,7 @@
         25,
         25
       ],
-      "text": "While a search runs the screen says checking which passages answer this….",
+      "text": "While the search is busy, the screen shows \"checking which passages answer this…\".",
       "sources": [
         {
           "path": "frontend/src/main.jsx",
@@ -5918,7 +6037,7 @@
         47,
         47
       ],
-      "text": "Malformed records are reported by id or line and retired records are not run.",
+      "text": "Malformed eval records are set aside by id, and retired records are left out of the run.",
       "sources": [
         {
           "path": "src/med_ask/evaluation.py",
@@ -6215,7 +6334,7 @@
         88,
         90
       ],
-      "text": "In served mode a log without grades is reported unscorable with reason logged before grading.",
+      "text": "When no retrieve function is given, a logged question without grades is reported with the reason \"logged before grading\".",
       "sources": [
         {
           "path": "src/med_ask/evaluation.py",
@@ -7640,7 +7759,7 @@
         19,
         19
       ],
-      "text": "Doubtful pages are marked from OCR — check the page: inherited-OCR passages and readings that failed a rule carry that label.",
+      "text": "A passage with check_page or inherited_ocr carries the label \"from OCR — check the page\".",
       "sources": [
         {
           "path": "frontend/src/source-label.js",
@@ -7804,12 +7923,19 @@
         36,
         36
       ],
-      "text": "The services join the external homelab-models network that Home Lab provides.",
+      "text": "The compose file uses homelab-models as an external network.",
       "sources": [
         {
           "path": "compose.yaml",
           "lines": [
             105,
+            105
+          ]
+        },
+        {
+          "path": "compose.yaml",
+          "lines": [
+            106,
             106
           ]
         }
