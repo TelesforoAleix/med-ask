@@ -320,15 +320,26 @@
         5,
         5
       ],
-      "text": "Models are reached through Home Lab's gateway, whose base URL and key come from the environment, over the external homelab-models network.",
+      "text": "The embedding client takes its base URL and key from MODEL_BASE_URL and MODEL_API_KEY.",
       "sources": [
         {
           "path": "src/med_ask/embedding.py",
           "lines": [
-            28,
+            27,
             29
           ]
-        },
+        }
+      ]
+    },
+    {
+      "id": "agents-gateway-network",
+      "doc": "AGENTS.md",
+      "doc_lines": [
+        5,
+        5
+      ],
+      "text": "The compose file uses homelab-models as an external network.",
+      "sources": [
         {
           "path": "compose.yaml",
           "lines": [
@@ -1194,19 +1205,19 @@
         76,
         77
       ],
-      "text": "Page reading uses the vision purpose through the same MODEL_BASE_URL as every other purpose.",
+      "text": "Page reading sends requests with the model vision through a client whose base URL is MODEL_BASE_URL.",
       "sources": [
         {
           "path": "src/med_ask/ocr.py",
           "lines": [
             50,
-            55
+            54
           ]
         },
         {
           "path": "src/med_ask/ocr.py",
           "lines": [
-            78,
+            76,
             78
           ]
         }
@@ -3361,27 +3372,56 @@
         65,
         67
       ],
-      "text": "The vector store creates its table when opened with setup, and Database.register and book_count record a table's model and book counts.",
+      "text": "vector_store opens the LlamaIndex PGVectorStore with perform_setup set to its setup argument.",
       "sources": [
         {
           "path": "src/med_ask/retrieval.py",
           "lines": [
-            238,
-            238
+            224,
+            224
           ]
         },
+        {
+          "path": "src/med_ask/retrieval.py",
+          "lines": [
+            230,
+            240
+          ]
+        }
+      ]
+    },
+    {
+      "id": "iv-register",
+      "doc": "docs/index-versions.md",
+      "doc_lines": [
+        65,
+        67
+      ],
+      "text": "Database.register records a table's model and dimensions in medask_models.",
+      "sources": [
         {
           "path": "src/med_ask/database.py",
           "lines": [
             65,
-            65
+            69
           ]
-        },
+        }
+      ]
+    },
+    {
+      "id": "iv-book-count",
+      "doc": "docs/index-versions.md",
+      "doc_lines": [
+        65,
+        67
+      ],
+      "text": "Database.book_count records a book's count for a table in medask_books.",
+      "sources": [
         {
           "path": "src/med_ask/database.py",
           "lines": [
             78,
-            78
+            81
           ]
         }
       ]
@@ -4101,12 +4141,12 @@
         46,
         47
       ],
-      "text": "Pages are sent one at a time as in-memory PNGs at 300 DPI, temperature 0, at most 4,096 tokens and a 180-second timeout.",
+      "text": "Page requests use temperature 0, max_tokens MAX_TOKENS (4096) and a 180-second timeout when no hint is given.",
       "sources": [
         {
           "path": "src/med_ask/ocr.py",
           "lines": [
-            30,
+            31,
             31
           ]
         },
@@ -4123,12 +4163,23 @@
             94,
             96
           ]
-        },
+        }
+      ]
+    },
+    {
+      "id": "ocr-png",
+      "doc": "docs/ocr.md",
+      "doc_lines": [
+        46,
+        47
+      ],
+      "text": "Each page is sent to the model vision as an in-memory PNG data URL.",
+      "sources": [
         {
           "path": "src/med_ask/ocr.py",
           "lines": [
-            87,
-            87
+            76,
+            89
           ]
         }
       ]
@@ -5157,20 +5208,52 @@
         32,
         34
       ],
-      "text": "Evidence carries labels, language, section, OCR provenance, links and at most the two same-section neighbours, each capped at 120 words.",
+      "text": "Neighbour passages are capped at NEIGHBOUR_WORDS, 120 words, and marked truncated when longer.",
       "sources": [
         {
           "path": "src/med_ask/retrieval.py",
           "lines": [
-            92,
-            121
+            26,
+            26
           ]
         },
         {
           "path": "src/med_ask/retrieval.py",
           "lines": [
-            351,
-            354
+            370,
+            371
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ocr-dpi",
+      "doc": "docs/ocr.md",
+      "doc_lines": [
+        46,
+        47
+      ],
+      "text": "Pages are rendered for reading at DPI, which is 300, by scaling the page matrix by DPI / 72.",
+      "sources": [
+        {
+          "path": "src/med_ask/ocr.py",
+          "lines": [
+            30,
+            30
+          ]
+        },
+        {
+          "path": "src/med_ask/ocr.py",
+          "lines": [
+            399,
+            399
+          ]
+        },
+        {
+          "path": "src/med_ask/ocr.py",
+          "lines": [
+            403,
+            403
           ]
         }
       ]
