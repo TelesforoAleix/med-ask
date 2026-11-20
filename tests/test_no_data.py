@@ -62,6 +62,15 @@ def test_rejects_unlisted_json(tmp_path, name):
     assert name in check_paths(tmp_path, [name])[0]
 
 
+def test_accepts_claims_file_but_no_other_docs_json(tmp_path):
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "claims.json").write_text("{}")
+    (docs / "other.json").write_text("{}")
+    assert check_paths(tmp_path, ["docs/claims.json"]) == []
+    assert "docs/other.json" in check_paths(tmp_path, ["docs/other.json"])[0]
+
+
 def test_rejects_large_file(tmp_path):
     (tmp_path / "large.txt").write_bytes(b"x" * (MAX_BYTES + 1))
     assert "larger than 1 MB" in check_paths(tmp_path, ["large.txt"])[0]

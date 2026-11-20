@@ -30,6 +30,7 @@ KEY_NAMES = frozenset({"id_rsa", "id_dsa", "id_ecdsa", "id_ed25519"})
 # Exact configuration paths only; never allow entire directories or glob patterns.
 JSON_CONFIG_PATHS = frozenset(
     {
+        "docs/claims.json",
         "frontend/package.json",
         "frontend/package-lock.json",
         "frontend/tsconfig.json",
