@@ -236,8 +236,8 @@
         {
           "path": "src/med_ask/__init__.py",
           "lines": [
-            206,
-            212
+            205,
+            231
           ]
         },
         {
@@ -590,8 +590,8 @@
         {
           "path": "src/med_ask/database.py",
           "lines": [
-            24,
-            30
+            20,
+            48
           ]
         }
       ]
@@ -1189,8 +1189,8 @@
         {
           "path": "src/med_ask/retrieval.py",
           "lines": [
-            134,
-            137
+            124,
+            139
           ]
         }
       ]
@@ -2486,8 +2486,8 @@
         {
           "path": "src/med_ask/database.py",
           "lines": [
-            184,
-            184
+            162,
+            204
           ]
         }
       ]
@@ -3458,8 +3458,8 @@
         {
           "path": "src/med_ask/retrieval.py",
           "lines": [
-            386,
-            386
+            377,
+            441
           ]
         }
       ]
@@ -3656,14 +3656,14 @@
           "path": "src/med_ask/extract.py",
           "lines": [
             1795,
-            1801
+            1851
           ]
         },
         {
           "path": "src/med_ask/extract.py",
           "lines": [
-            1831,
-            1832
+            1795,
+            1851
           ]
         }
       ]
@@ -3748,8 +3748,8 @@
         {
           "path": "src/med_ask/extract.py",
           "lines": [
-            1835,
-            1837
+            1795,
+            1851
           ]
         }
       ]
@@ -3809,8 +3809,8 @@
         {
           "path": "src/med_ask/ocr.py",
           "lines": [
-            214,
-            215
+            204,
+            251
           ]
         },
         {
@@ -3928,14 +3928,14 @@
           "path": "src/med_ask/ocr.py",
           "lines": [
             493,
-            496
+            530
           ]
         },
         {
           "path": "src/med_ask/ocr.py",
           "lines": [
-            509,
-            526
+            493,
+            530
           ]
         }
       ]
@@ -4052,8 +4052,8 @@
         {
           "path": "src/med_ask/ocr.py",
           "lines": [
-            100,
-            108
+            72,
+            115
           ]
         },
         {
@@ -4280,29 +4280,29 @@
         {
           "path": "src/med_ask/generation.py",
           "lines": [
-            86,
-            86
+            84,
+            144
           ]
         },
         {
           "path": "src/med_ask/generation.py",
           "lines": [
-            128,
-            128
+            99,
+            140
           ]
         },
         {
           "path": "src/med_ask/generation.py",
           "lines": [
-            212,
-            212
+            181,
+            219
           ]
         },
         {
           "path": "src/med_ask/retrieval.py",
           "lines": [
-            264,
-            264
+            256,
+            287
           ]
         }
       ]
@@ -4380,22 +4380,22 @@
         {
           "path": "src/med_ask/figures.py",
           "lines": [
-            284,
-            284
+            243,
+            293
           ]
         },
         {
           "path": "src/med_ask/retrieval.py",
           "lines": [
-            297,
-            297
+            290,
+            333
           ]
         },
         {
           "path": "src/med_ask/retrieval.py",
           "lines": [
-            326,
-            326
+            290,
+            333
           ]
         },
         {
@@ -4726,22 +4726,22 @@
         {
           "path": "src/med_ask/figures.py",
           "lines": [
-            93,
-            93
+            80,
+            138
           ]
         },
         {
           "path": "src/med_ask/figures.py",
           "lines": [
-            126,
-            127
+            80,
+            138
           ]
         },
         {
           "path": "src/med_ask/generation.py",
           "lines": [
-            157,
-            157
+            147,
+            178
           ]
         }
       ]
@@ -4990,8 +4990,8 @@
         {
           "path": "src/med_ask/__init__.py",
           "lines": [
-            212,
-            212
+            205,
+            231
           ]
         }
       ]
@@ -5380,8 +5380,8 @@
         {
           "path": "src/med_ask/database.py",
           "lines": [
-            184,
-            184
+            162,
+            204
           ]
         }
       ]
@@ -5834,15 +5834,15 @@
         {
           "path": "src/med_ask/evaluation.py",
           "lines": [
-            180,
-            180
+            174,
+            197
           ]
         },
         {
           "path": "src/med_ask/evaluation.py",
           "lines": [
-            289,
-            294
+            244,
+            297
           ]
         }
       ]
@@ -6493,7 +6493,7 @@
           "path": "src/med_ask/navigation.py",
           "lines": [
             354,
-            365
+            387
           ]
         }
       ]
@@ -6753,8 +6753,8 @@
         {
           "path": "src/med_ask/resolve_cache.py",
           "lines": [
-            84,
-            84
+            77,
+            108
           ]
         },
         {
@@ -6829,7 +6829,7 @@
           "path": "src/med_ask/resolutions.py",
           "lines": [
             195,
-            195
+            208
           ]
         },
         {
