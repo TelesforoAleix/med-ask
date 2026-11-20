@@ -1694,8 +1694,15 @@
         74,
         74
       ],
-      "text": "app, public and ingest all connect to the postgres service.",
+      "text": "The compose services app, public and ingest each set DATABASE_URL to the postgres host.",
       "sources": [
+        {
+          "path": "compose.yaml",
+          "lines": [
+            2,
+            2
+          ]
+        },
         {
           "path": "compose.yaml",
           "lines": [
@@ -1706,8 +1713,22 @@
         {
           "path": "compose.yaml",
           "lines": [
+            29,
+            29
+          ]
+        },
+        {
+          "path": "compose.yaml",
+          "lines": [
             40,
             40
+          ]
+        },
+        {
+          "path": "compose.yaml",
+          "lines": [
+            48,
+            48
           ]
         },
         {
@@ -2517,7 +2538,7 @@
         181,
         181
       ],
-      "text": "Stopping the unit runs docker compose down without removing volumes.",
+      "text": "The unit's ExecStop runs `docker compose -f /srv/homelab/med-ask/compose.yaml down`.",
       "sources": [
         {
           "path": "deploy/med-ask.service",
@@ -2535,26 +2556,26 @@
         182,
         182
       ],
-      "text": "app, public and ingest all use the med-ask-local image.",
+      "text": "The compose services app, public and ingest all use the image med-ask-local.",
       "sources": [
         {
           "path": "compose.yaml",
           "lines": [
-            3,
+            2,
             3
           ]
         },
         {
           "path": "compose.yaml",
           "lines": [
-            30,
+            29,
             30
           ]
         },
         {
           "path": "compose.yaml",
           "lines": [
-            49,
+            48,
             49
           ]
         }
@@ -2667,20 +2688,13 @@
         197,
         198
       ],
-      "text": "cloudflared joins only the tunnel network, which public shares and app and postgres do not.",
+      "text": "cloudflared joins only the tunnel network; public joins tunnel; app and postgres do not.",
       "sources": [
         {
           "path": "compose.yaml",
           "lines": [
-            74,
-            74
-          ]
-        },
-        {
-          "path": "compose.yaml",
-          "lines": [
-            32,
-            32
+            2,
+            2
           ]
         },
         {
@@ -2693,7 +2707,35 @@
         {
           "path": "compose.yaml",
           "lines": [
-            81,
+            29,
+            29
+          ]
+        },
+        {
+          "path": "compose.yaml",
+          "lines": [
+            32,
+            32
+          ]
+        },
+        {
+          "path": "compose.yaml",
+          "lines": [
+            68,
+            68
+          ]
+        },
+        {
+          "path": "compose.yaml",
+          "lines": [
+            74,
+            74
+          ]
+        },
+        {
+          "path": "compose.yaml",
+          "lines": [
+            79,
             81
           ]
         }
@@ -2853,12 +2895,12 @@
         268,
         268
       ],
-      "text": "Search raises No index yet when the current model has no table.",
+      "text": "Search raises NoIndex (\"No index yet\") when the database has no recorded model for the current embedding table.",
       "sources": [
         {
           "path": "src/med_ask/retrieval.py",
           "lines": [
-            459,
+            452,
             461
           ]
         }
@@ -3872,20 +3914,13 @@
         31,
         31
       ],
-      "text": "The ocr and ocr-queue commands read the manifest and skip the database.",
+      "text": "ingest opens the database only for commands outside its list, and ocr and ocr-queue are in that list.",
       "sources": [
         {
           "path": "src/med_ask/ingest.py",
           "lines": [
             193,
-            195
-          ]
-        },
-        {
-          "path": "src/med_ask/ingest.py",
-          "lines": [
-            211,
-            211
+            204
           ]
         }
       ]
@@ -5540,20 +5575,27 @@
         13,
         15
       ],
-      "text": "Manifest eval_book values map books to eval ids, and unmapped eval books count as not indexed.",
+      "text": "Manifest eval_book values map books to eval ids; confirmed evidence in an eval book that no manifest book names is left out of scoring.",
       "sources": [
         {
           "path": "src/med_ask/evaluation.py",
           "lines": [
-            313,
-            313
+            174,
+            185
           ]
         },
         {
           "path": "src/med_ask/evaluation.py",
           "lines": [
             322,
-            322
+            323
+          ]
+        },
+        {
+          "path": "src/med_ask/evaluation.py",
+          "lines": [
+            346,
+            346
           ]
         }
       ]
@@ -5647,27 +5689,49 @@
         27,
         29
       ],
-      "text": "An eval run calls only search, writes a new run-<time>-<purpose>-roles-<on|off>-<suffix>.json exclusively, and stores ids, scores, ranks, pages and timings.",
+      "text": "An eval run writes its result to a new run-<time>-<purpose>-roles-<on|off>-<suffix>.json file.",
+      "sources": [
+        {
+          "path": "src/med_ask/evaluation.py",
+          "lines": [
+            412,
+            417
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ev-run-exclusive",
+      "doc": "docs/evaluation.md",
+      "doc_lines": [
+        27,
+        29
+      ],
+      "text": "The run file is opened with mode \"x\", so an existing file is never overwritten.",
+      "sources": [
+        {
+          "path": "src/med_ask/evaluation.py",
+          "lines": [
+            415,
+            418
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ev-run-contents",
+      "doc": "docs/evaluation.md",
+      "doc_lines": [
+        27,
+        29
+      ],
+      "text": "An eval run retrieves with the app's search and keeps ids, ranks, scores and timings without question text.",
       "sources": [
         {
           "path": "src/med_ask/evaluation.py",
           "lines": [
             315,
             316
-          ]
-        },
-        {
-          "path": "src/med_ask/evaluation.py",
-          "lines": [
-            416,
-            416
-          ]
-        },
-        {
-          "path": "src/med_ask/evaluation.py",
-          "lines": [
-            418,
-            418
           ]
         }
       ]
@@ -8055,7 +8119,7 @@
         84,
         84
       ],
-      "text": "The public service takes the asker from the Cloudflare Access header and is reached through cloudflared.",
+      "text": "Without private routes the asker is the Cf-Access-Authenticated-User-Email header, and a request without it gets 401.",
       "sources": [
         {
           "path": "src/med_ask/__init__.py",
@@ -8063,7 +8127,18 @@
             94,
             100
           ]
-        },
+        }
+      ]
+    },
+    {
+      "id": "readme-cloudflared",
+      "doc": "README.md",
+      "doc_lines": [
+        84,
+        84
+      ],
+      "text": "The cloudflared service runs a tunnel and starts after public is healthy.",
+      "sources": [
         {
           "path": "compose.yaml",
           "lines": [
@@ -8080,13 +8155,27 @@
         84,
         84
       ],
-      "text": "Private routes are on only in app, which publishes on APP_BIND_ADDRESS.",
+      "text": "Only the app service sets PRIVATE_ROUTES_ENABLED to \"true\", and app publishes port 8100 on APP_BIND_ADDRESS.",
       "sources": [
         {
           "path": "compose.yaml",
           "lines": [
-            6,
+            2,
             9
+          ]
+        },
+        {
+          "path": "compose.yaml",
+          "lines": [
+            29,
+            29
+          ]
+        },
+        {
+          "path": "compose.yaml",
+          "lines": [
+            34,
+            34
           ]
         },
         {
