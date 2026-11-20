@@ -7,8 +7,8 @@ labelling. Scoring the labels is in [evaluation.md](evaluation.md#real-case-mode
 
 ## The screen
 
-Only `app` with private routes on shows **Label questions** beside **Resolve issues**; every
-`/api/private/label` path is 404 on `public`. Choose an inclusive date range and a logged
+Only `app` with private routes on shows **Label questions** beside **Resolve issues**; who
+can reach private routes is in [resolve.md](resolve.md#who-can-reach-it). Choose an inclusive date range and a logged
 question, newest first, and read its question, date, language and the generated answer as
 logged.
 

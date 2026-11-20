@@ -127,6 +127,15 @@
         44
       ],
       "standalone": false
+    },
+    {
+      "name": "documentation",
+      "doc": "ARCHITECTURE.md",
+      "doc_lines": [
+        45,
+        45
+      ],
+      "standalone": false
     }
   ],
   "claims": [
@@ -191,19 +200,176 @@
       ]
     },
     {
-      "id": "agents-ci-units-compose",
+      "id": "agents-passages-with-page",
+      "doc": "AGENTS.md",
+      "doc_lines": [
+        3,
+        4
+      ],
+      "text": "med-ask search returns passages with their book, PDF page and printed page.",
+      "sources": [
+        {
+          "path": "src/med_ask/retrieval.py",
+          "lines": [
+            96,
+            121
+          ]
+        },
+        {
+          "path": "src/med_ask/__init__.py",
+          "lines": [
+            167,
+            175
+          ]
+        }
+      ]
+    },
+    {
+      "id": "agents-answer-after",
+      "doc": "AGENTS.md",
+      "doc_lines": [
+        4,
+        4
+      ],
+      "text": "The generated answer comes from a separate request that the browser posts after the evidence is shown.",
+      "sources": [
+        {
+          "path": "src/med_ask/__init__.py",
+          "lines": [
+            206,
+            212
+          ]
+        },
+        {
+          "path": "frontend/src/main.jsx",
+          "lines": [
+            66,
+            66
+          ]
+        }
+      ]
+    },
+    {
+      "id": "agents-flask-react",
+      "doc": "AGENTS.md",
+      "doc_lines": [
+        4,
+        4
+      ],
+      "text": "The app is a Flask app that serves a built React front end.",
+      "sources": [
+        {
+          "path": "src/med_ask/__init__.py",
+          "lines": [
+            32,
+            32
+          ]
+        },
+        {
+          "path": "src/med_ask/__init__.py",
+          "lines": [
+            340,
+            351
+          ]
+        },
+        {
+          "path": "Dockerfile",
+          "lines": [
+            26,
+            26
+          ]
+        },
+        {
+          "path": "frontend/package.json",
+          "lines": [
+            10,
+            11
+          ]
+        }
+      ]
+    },
+    {
+      "id": "agents-llamaindex-pgvector",
+      "doc": "AGENTS.md",
+      "doc_lines": [
+        5,
+        5
+      ],
+      "text": "The index is a LlamaIndex PGVectorStore on Postgres with pgvector.",
+      "sources": [
+        {
+          "path": "src/med_ask/retrieval.py",
+          "lines": [
+            224,
+            229
+          ]
+        },
+        {
+          "path": "postgres/init.sql",
+          "lines": [
+            1,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "id": "agents-gateway",
+      "doc": "AGENTS.md",
+      "doc_lines": [
+        5,
+        5
+      ],
+      "text": "Models are reached through Home Lab's gateway, whose base URL and key come from the environment, over the external homelab-models network.",
+      "sources": [
+        {
+          "path": "src/med_ask/embedding.py",
+          "lines": [
+            28,
+            29
+          ]
+        },
+        {
+          "path": "compose.yaml",
+          "lines": [
+            105,
+            106
+          ]
+        }
+      ]
+    },
+    {
+      "id": "agents-ci-units",
       "doc": "AGENTS.md",
       "doc_lines": [
         21,
-        22
+        21
       ],
-      "text": "CI verifies the export units with systemd-analyze verify, and a Compose job builds the stack and checks the page, health and the private/public split.",
+      "text": "CI verifies the export units with systemd-analyze verify.",
       "sources": [
         {
           "path": ".github/workflows/ci.yml",
           "lines": [
             32,
             33
+          ]
+        }
+      ]
+    },
+    {
+      "id": "agents-ci-compose-build",
+      "doc": "AGENTS.md",
+      "doc_lines": [
+        21,
+        22
+      ],
+      "text": "CI's Compose job builds the stack and starts it with docker compose up.",
+      "sources": [
+        {
+          "path": ".github/workflows/ci.yml",
+          "lines": [
+            56,
+            56
           ]
         },
         {
@@ -212,19 +378,41 @@
             71,
             72
           ]
-        },
+        }
+      ]
+    },
+    {
+      "id": "agents-ci-compose-page-health",
+      "doc": "AGENTS.md",
+      "doc_lines": [
+        21,
+        22
+      ],
+      "text": "The Compose job fetches the search page title and checks that /api/health returns postgres ok and vector ok.",
+      "sources": [
         {
           "path": ".github/workflows/ci.yml",
           "lines": [
             73,
-            82
+            84
           ]
-        },
+        }
+      ]
+    },
+    {
+      "id": "agents-ci-compose-split",
+      "doc": "AGENTS.md",
+      "doc_lines": [
+        21,
+        22
+      ],
+      "text": "The Compose job checks that public answers private and unknown API paths with 404, that app answers the private ping, and that no cloudflared container exists.",
+      "sources": [
         {
           "path": ".github/workflows/ci.yml",
           "lines": [
             85,
-            97
+            113
           ]
         }
       ]
@@ -262,13 +450,45 @@
       ]
     },
     {
-      "id": "arch-public-same-image",
+      "id": "arch-public-image-private-off",
       "doc": "ARCHITECTURE.md",
       "doc_lines": [
         32,
         32
       ],
-      "text": "The public service uses the same image as app with private routes off, publishes no host port and shares the tunnel network with cloudflared.",
+      "text": "The public service uses the same image as app, and its environment does not enable private routes.",
+      "sources": [
+        {
+          "path": "compose.yaml",
+          "lines": [
+            2,
+            4
+          ]
+        },
+        {
+          "path": "compose.yaml",
+          "lines": [
+            29,
+            31
+          ]
+        },
+        {
+          "path": "compose.yaml",
+          "lines": [
+            33,
+            36
+          ]
+        }
+      ]
+    },
+    {
+      "id": "arch-public-no-port",
+      "doc": "ARCHITECTURE.md",
+      "doc_lines": [
+        32,
+        32
+      ],
+      "text": "The public service defines no ports.",
       "sources": [
         {
           "path": "compose.yaml",
@@ -276,12 +496,23 @@
             29,
             47
           ]
-        },
+        }
+      ]
+    },
+    {
+      "id": "arch-public-tunnel-network",
+      "doc": "ARCHITECTURE.md",
+      "doc_lines": [
+        32,
+        32
+      ],
+      "text": "The public service and cloudflared share the tunnel network.",
+      "sources": [
         {
           "path": "compose.yaml",
           "lines": [
-            2,
-            4
+            32,
+            32
           ]
         },
         {
@@ -336,7 +567,7 @@
         35,
         35
       ],
-      "text": "postgres runs the pgvector Postgres 17 image without a host port and holds the bookkeeping and question-log tables.",
+      "text": "The postgres service runs the pgvector Postgres 17 image and defines no ports.",
       "sources": [
         {
           "path": "compose.yaml",
@@ -344,7 +575,18 @@
             79,
             96
           ]
-        },
+        }
+      ]
+    },
+    {
+      "id": "arch-postgres-tables",
+      "doc": "ARCHITECTURE.md",
+      "doc_lines": [
+        35,
+        35
+      ],
+      "text": "postgres holds the bookkeeping and question-log tables that Database.ensure creates.",
+      "sources": [
         {
           "path": "src/med_ask/database.py",
           "lines": [
@@ -355,21 +597,32 @@
       ]
     },
     {
-      "id": "arch-frontend-build",
+      "id": "arch-frontend-stack",
       "doc": "ARCHITECTURE.md",
       "doc_lines": [
         36,
         36
       ],
-      "text": "The React 19 and Vite front end is built in the image, copied into the runtime as FRONTEND_DIST and served by the Flask app.",
+      "text": "The front end is a React 19 and Vite project built with vite build.",
       "sources": [
         {
           "path": "frontend/package.json",
           "lines": [
-            9,
+            7,
             15
           ]
-        },
+        }
+      ]
+    },
+    {
+      "id": "arch-frontend-image",
+      "doc": "ARCHITECTURE.md",
+      "doc_lines": [
+        36,
+        36
+      ],
+      "text": "The Dockerfile builds the front end, copies it into the runtime image as FRONTEND_DIST, and the Flask app serves it.",
+      "sources": [
         {
           "path": "Dockerfile",
           "lines": [
@@ -380,15 +633,15 @@
         {
           "path": "Dockerfile",
           "lines": [
-            26,
-            26
+            22,
+            22
           ]
         },
         {
           "path": "Dockerfile",
           "lines": [
-            22,
-            22
+            26,
+            26
           ]
         },
         {
@@ -557,8 +810,8 @@
       "id": "arch-lib-llamaindex",
       "doc": "ARCHITECTURE.md",
       "doc_lines": [
-        48,
-        49
+        49,
+        50
       ],
       "text": "LlamaIndex's PGVectorStore owns the vector table, named per index, with hybrid search and approximate (HNSW) indexes disabled.",
       "sources": [
@@ -575,8 +828,8 @@
       "id": "arch-lib-pymupdf",
       "doc": "ARCHITECTURE.md",
       "doc_lines": [
-        50,
-        50
+        51,
+        51
       ],
       "text": "PyMuPDF reads PDF page text, bookmarks and page images.",
       "sources": [
@@ -607,8 +860,8 @@
       "id": "arch-lib-openai",
       "doc": "ARCHITECTURE.md",
       "doc_lines": [
-        51,
-        51
+        52,
+        52
       ],
       "text": "Every model call goes through the OpenAI client with a purpose in the model field.",
       "sources": [
@@ -639,8 +892,8 @@
       "id": "arch-lib-langdetect",
       "doc": "ARCHITECTURE.md",
       "doc_lines": [
-        52,
-        52
+        53,
+        53
       ],
       "text": "langdetect detects language using only the English, Spanish and Catalan profiles.",
       "sources": [
@@ -657,8 +910,8 @@
       "id": "arch-lib-gunicorn",
       "doc": "ARCHITECTURE.md",
       "doc_lines": [
-        53,
-        53
+        54,
+        54
       ],
       "text": "Gunicorn serves the Flask app with two workers.",
       "sources": [
@@ -675,8 +928,8 @@
       "id": "arch-lib-postgres-tables",
       "doc": "ARCHITECTURE.md",
       "doc_lines": [
-        54,
-        55
+        55,
+        56
       ],
       "text": "med-ask's own tables hold bookkeeping, the question log and the translation cache.",
       "sources": [
@@ -700,8 +953,8 @@
       "id": "arch-flow-ingestion",
       "doc": "ARCHITECTURE.md",
       "doc_lines": [
-        59,
-        61
+        60,
+        62
       ],
       "text": "Ingestion extracts passages, probes the endpoint's model and dimensions to choose the table, and inserts only missing passage ids through LlamaIndex.",
       "sources": [
@@ -732,8 +985,8 @@
       "id": "arch-flow-question-log",
       "doc": "ARCHITECTURE.md",
       "doc_lines": [
-        63,
-        64
+        64,
+        65
       ],
       "text": "A search logs the question, embeds it once, and retrieves passages and, from v5, figures.",
       "sources": [
@@ -757,8 +1010,8 @@
       "id": "arch-flow-question-grade",
       "doc": "ARCHITECTURE.md",
       "doc_lines": [
-        64,
-        65
+        65,
+        66
       ],
       "text": "Each candidate is sent to the grade purpose and only those graded yes are shown, grouped by book.",
       "sources": [
@@ -782,8 +1035,8 @@
       "id": "arch-flow-answer",
       "doc": "ARCHITECTURE.md",
       "doc_lines": [
-        67,
-        68
+        68,
+        69
       ],
       "text": "The answer route sends only the numbered passing passages to chat, validates the reply and returns it marked generated.",
       "sources": [
@@ -821,8 +1074,8 @@
       "id": "arch-flow-review",
       "doc": "ARCHITECTURE.md",
       "doc_lines": [
-        69,
-        69
+        70,
+        70
       ],
       "text": "Review source loads page images from /api/page, and navigation supplies contents and evidence links.",
       "sources": [
@@ -853,8 +1106,8 @@
       "id": "arch-runs-unit",
       "doc": "ARCHITECTURE.md",
       "doc_lines": [
-        73,
-        73
+        74,
+        74
       ],
       "text": "On the server, med-ask.service runs Compose from the clone at /srv/homelab/med-ask after pulling main.",
       "sources": [
@@ -871,8 +1124,8 @@
       "id": "arch-runs-volumes",
       "doc": "ARCHITECTURE.md",
       "doc_lines": [
-        74,
-        74
+        75,
+        75
       ],
       "text": "Data paths come from environment variables and fall back to named volumes when unset.",
       "sources": [
@@ -903,8 +1156,8 @@
       "id": "arch-runs-purposes",
       "doc": "ARCHITECTURE.md",
       "doc_lines": [
-        75,
-        76
+        76,
+        77
       ],
       "text": "Page reading uses the vision purpose through the same MODEL_BASE_URL as every other purpose.",
       "sources": [
@@ -925,11 +1178,29 @@
       ]
     },
     {
+      "id": "arch-runs-bulk-purpose",
+      "doc": "ARCHITECTURE.md",
+      "doc_lines": [
+        76,
+        76
+      ],
+      "text": "embed-large-bulk is a purpose name that the index-table rule knows alongside embed-large.",
+      "sources": [
+        {
+          "path": "src/med_ask/retrieval.py",
+          "lines": [
+            134,
+            137
+          ]
+        }
+      ]
+    },
+    {
       "id": "arch-other-gateway",
       "doc": "ARCHITECTURE.md",
       "doc_lines": [
-        82,
-        82
+        83,
+        83
       ],
       "text": "app, public and ingest join the external homelab-models network and call the gateway at MODEL_BASE_URL.",
       "sources": [
@@ -967,8 +1238,8 @@
       "id": "arch-other-host-units",
       "doc": "ARCHITECTURE.md",
       "doc_lines": [
-        83,
-        83
+        84,
+        84
       ],
       "text": "med-ask.service is part of homelab-data.target and orders itself after homelab.service, which it wants.",
       "sources": [
@@ -1071,21 +1342,46 @@
       "doc": "docs/contracts.md",
       "doc_lines": [
         23,
-        24
+        23
       ],
-      "text": "The reported embedding model and dimensions select the vector table, and a changed model is refused on an existing table.",
+      "text": "The reported embedding model selects the vector table name.",
       "sources": [
         {
           "path": "src/med_ask/retrieval.py",
           "lines": [
+            123,
+            139
+          ]
+        },
+        {
+          "path": "src/med_ask/retrieval.py",
+          "lines": [
             453,
-            460
+            457
+          ]
+        }
+      ]
+    },
+    {
+      "id": "con-gateway-dimensions",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        24,
+        24
+      ],
+      "text": "The reported dimensions are validated against the selected table's recorded dimensions, and a mismatch is refused.",
+      "sources": [
+        {
+          "path": "src/med_ask/retrieval.py",
+          "lines": [
+            458,
+            466
           ]
         },
         {
           "path": "src/med_ask/database.py",
           "lines": [
-            76,
+            65,
             76
           ]
         }
@@ -1095,8 +1391,8 @@
       "id": "con-host-provider",
       "doc": "docs/contracts.md",
       "doc_lines": [
-        30,
-        31
+        31,
+        32
       ],
       "text": "med-ask's units depend on the /srv/homelab mount, homelab-data.target and homelab.service.",
       "sources": [
@@ -1120,8 +1416,8 @@
       "id": "con-host-condition",
       "doc": "docs/contracts.md",
       "doc_lines": [
-        33,
-        33
+        34,
+        34
       ],
       "text": "Both units carry ConditionPathIsMountPoint=/srv/homelab.",
       "sources": [
@@ -1145,8 +1441,8 @@
       "id": "con-public-identity",
       "doc": "docs/contracts.md",
       "doc_lines": [
-        41,
-        42
+        42,
+        43
       ],
       "text": "Outside private mode the app takes the asker from the Cf-Access-Authenticated-User-Email header.",
       "sources": [
@@ -1163,8 +1459,8 @@
       "id": "con-public-one-image",
       "doc": "docs/contracts.md",
       "doc_lines": [
-        43,
-        44
+        44,
+        45
       ],
       "text": "The image contains both the built front end and the API.",
       "sources": [
@@ -1178,21 +1474,39 @@
       ]
     },
     {
-      "id": "con-public-no-port",
+      "id": "con-public-header-private-off",
       "doc": "docs/contracts.md",
       "doc_lines": [
-        44,
-        44
+        45,
+        45
       ],
-      "text": "public trusts the Access header because private routes are off there, and it defines no ports.",
+      "text": "The Access email header is read only when private routes are off, as in public.",
       "sources": [
         {
           "path": "src/med_ask/__init__.py",
           "lines": [
-            95,
-            97
+            44,
+            44
           ]
         },
+        {
+          "path": "src/med_ask/__init__.py",
+          "lines": [
+            94,
+            100
+          ]
+        }
+      ]
+    },
+    {
+      "id": "con-public-no-port",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        45,
+        45
+      ],
+      "text": "public defines no ports.",
+      "sources": [
         {
           "path": "compose.yaml",
           "lines": [
@@ -1206,8 +1520,8 @@
       "id": "con-env-users",
       "doc": "docs/contracts.md",
       "doc_lines": [
-        50,
-        51
+        51,
+        52
       ],
       "text": "Compose passes environment settings to app, public, ingest, postgres and cloudflared.",
       "sources": [
@@ -1249,13 +1563,38 @@
       ]
     },
     {
+      "id": "con-env-password-required",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        55,
+        55
+      ],
+      "text": "POSTGRES_PASSWORD has no default, and Compose stops with a message when it is unset.",
+      "sources": [
+        {
+          "path": "compose.yaml",
+          "lines": [
+            15,
+            15
+          ]
+        },
+        {
+          "path": "compose.yaml",
+          "lines": [
+            85,
+            85
+          ]
+        }
+      ]
+    },
+    {
       "id": "con-env-defaults",
       "doc": "docs/contracts.md",
       "doc_lines": [
-        54,
-        55
+        56,
+        58
       ],
-      "text": "Unset variables default to loopback, named volumes, index v2, the embed purpose and roles off.",
+      "text": "Compose gives the bind address, the data paths, the index version, the embedding purpose and the embedding roles a default when they are unset.",
       "sources": [
         {
           "path": "compose.yaml",
@@ -1284,8 +1623,8 @@
       "id": "con-export-format",
       "doc": "docs/contracts.md",
       "doc_lines": [
-        59,
-        59
+        62,
+        62
       ],
       "text": "The export writes one row_to_json row of medask_questions per line.",
       "sources": [
@@ -1302,8 +1641,8 @@
       "id": "con-export-provider",
       "doc": "docs/contracts.md",
       "doc_lines": [
-        60,
-        61
+        63,
+        64
       ],
       "text": "The export units run ingest export-questions, which writes /data/originals/questions.jsonl.",
       "sources": [
@@ -1331,29 +1670,11 @@
       ]
     },
     {
-      "id": "con-export-refuses",
-      "doc": "docs/contracts.md",
-      "doc_lines": [
-        65,
-        65
-      ],
-      "text": "The export refuses to replace an existing file that has more rows.",
-      "sources": [
-        {
-          "path": "src/med_ask/database.py",
-          "lines": [
-            195,
-            198
-          ]
-        }
-      ]
-    },
-    {
       "id": "con-db-ensure",
       "doc": "docs/contracts.md",
       "doc_lines": [
-        69,
-        69
+        73,
+        73
       ],
       "text": "Database.ensure creates the tables if missing and adds missing question-log columns.",
       "sources": [
@@ -1370,8 +1691,8 @@
       "id": "con-db-users",
       "doc": "docs/contracts.md",
       "doc_lines": [
-        70,
-        70
+        74,
+        74
       ],
       "text": "app, public and ingest all connect to the postgres service.",
       "sources": [
@@ -1402,8 +1723,8 @@
       "id": "con-db-source",
       "doc": "docs/contracts.md",
       "doc_lines": [
-        71,
-        72
+        75,
+        76
       ],
       "text": "The schema is medask_models, medask_books, medask_questions and medask_translations plus LlamaIndex vector tables, and init.sql creates the vector extension.",
       "sources": [
@@ -1434,8 +1755,8 @@
       "id": "con-db-concurrent",
       "doc": "docs/contracts.md",
       "doc_lines": [
-        73,
-        74
+        77,
+        78
       ],
       "text": "Columns are added with ADD COLUMN IF NOT EXISTS under an advisory lock that serializes the two app services.",
       "sources": [
@@ -1451,6 +1772,85 @@
           "lines": [
             44,
             44
+          ]
+        }
+      ]
+    },
+    {
+      "id": "con-claims-version",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        83,
+        83
+      ],
+      "text": "The claims file declares version 1, and the checker asserts it.",
+      "sources": [
+        {
+          "path": "docs/claims.json",
+          "lines": [
+            2,
+            2
+          ]
+        },
+        {
+          "path": "tests/test_docs_links.py",
+          "lines": [
+            207,
+            207
+          ]
+        }
+      ]
+    },
+    {
+      "id": "con-claims-user",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        85,
+        86
+      ],
+      "text": "The claims file names this repository as the one it documents.",
+      "sources": [
+        {
+          "path": "docs/claims.json",
+          "lines": [
+            3,
+            3
+          ]
+        }
+      ]
+    },
+    {
+      "id": "con-claims-source",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        87,
+        90
+      ],
+      "text": "The link test checks that every path and line the claims file cites exists.",
+      "sources": [
+        {
+          "path": "tests/test_docs_links.py",
+          "lines": [
+            191,
+            214
+          ]
+        }
+      ]
+    },
+    {
+      "id": "con-claims-change",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        91,
+        94
+      ],
+      "text": "The link test requires unique ids per kind in the claims file.",
+      "sources": [
+        {
+          "path": "tests/test_docs_links.py",
+          "lines": [
+            217,
+            225
           ]
         }
       ]
@@ -1505,29 +1905,8 @@
         13,
         14
       ],
-      "text": "CI's Compose job builds and starts the stack, checks the page, health and the private/public split, and removes its volume with docker compose down -v.",
+      "text": "CI's Compose job removes its volume with docker compose down -v when it ends.",
       "sources": [
-        {
-          "path": ".github/workflows/ci.yml",
-          "lines": [
-            71,
-            72
-          ]
-        },
-        {
-          "path": ".github/workflows/ci.yml",
-          "lines": [
-            73,
-            74
-          ]
-        },
-        {
-          "path": ".github/workflows/ci.yml",
-          "lines": [
-            85,
-            86
-          ]
-        },
         {
           "path": ".github/workflows/ci.yml",
           "lines": [
@@ -2574,15 +2953,8 @@
         13,
         14
       ],
-      "text": "INDEX_VERSION defaults to v2 and must be v followed by one to four digits.",
+      "text": "INDEX_VERSION must be v followed by one to four digits.",
       "sources": [
-        {
-          "path": "src/med_ask/retrieval.py",
-          "lines": [
-            27,
-            27
-          ]
-        },
         {
           "path": "src/med_ask/retrieval.py",
           "lines": [
@@ -2596,8 +2968,8 @@
       "id": "iv-recorded-model",
       "doc": "docs/index-versions.md",
       "doc_lines": [
-        14,
-        16
+        15,
+        17
       ],
       "text": "medask_models records each table's model and dimensions; ingest refuses a different recorded model and search refuses a missing or different one.",
       "sources": [
@@ -2621,8 +2993,8 @@
       "id": "iv-roles-exact",
       "doc": "docs/index-versions.md",
       "doc_lines": [
-        18,
-        18
+        19,
+        19
       ],
       "text": "EMBEDDING_ROLES enables roles only when it equals true.",
       "sources": [
@@ -2639,8 +3011,8 @@
       "id": "iv-roles-extra-body",
       "doc": "docs/index-versions.md",
       "doc_lines": [
-        18,
-        20
+        19,
+        21
       ],
       "text": "With roles on, questions carry input_type query and passages input_type passage through extra_body, with unchanged text.",
       "sources": [
@@ -2664,8 +3036,8 @@
       "id": "iv-role-table",
       "doc": "docs/index-versions.md",
       "doc_lines": [
-        20,
-        21
+        21,
+        22
       ],
       "text": "Role tables add r after the version, except for embed-large and embed-large-bulk.",
       "sources": [
@@ -2682,8 +3054,8 @@
       "id": "iv-passage-id",
       "doc": "docs/index-versions.md",
       "doc_lines": [
-        23,
-        23
+        24,
+        24
       ],
       "text": "A passage id hashes the book id, the PDF page range and the unchanged text.",
       "sources": [
@@ -2700,10 +3072,10 @@
       "id": "iv-below-v5",
       "doc": "docs/index-versions.md",
       "doc_lines": [
-        31,
-        31
+        33,
+        33
       ],
-      "text": "Below v5 the index holds passages only, of kinds content, summary, glossary, exercise and references.",
+      "text": "Below v5 the index holds passages only, of every kind in the extraction vocabulary.",
       "sources": [
         {
           "path": "src/med_ask/retrieval.py",
@@ -2732,29 +3104,29 @@
       "id": "iv-v5",
       "doc": "docs/index-versions.md",
       "doc_lines": [
-        32,
-        32
+        34,
+        34
       ],
-      "text": "From v5 the index adds figure nodes of kind figure built from printed labels and captions, keeping Passarge plates whole.",
+      "text": "In v5 the index adds figure nodes of kind figure whose text is the printed label and caption, with Passarge plates kept whole.",
       "sources": [
         {
           "path": "src/med_ask/retrieval.py",
           "lines": [
-            336,
-            338
+            31,
+            34
           ]
         },
         {
           "path": "src/med_ask/retrieval.py",
           "lines": [
             321,
-            321
+            338
           ]
         },
         {
           "path": "src/med_ask/retrieval.py",
           "lines": [
-            38,
+            37,
             38
           ]
         }
@@ -2764,10 +3136,10 @@
       "id": "iv-v6",
       "doc": "docs/index-versions.md",
       "doc_lines": [
-        33,
-        33
+        35,
+        35
       ],
-      "text": "From v6 Passarge plates are split into panels.",
+      "text": "From v6 the index splits Passarge plates into lettered panels, as v5 otherwise.",
       "sources": [
         {
           "path": "src/med_ask/retrieval.py",
@@ -2782,10 +3154,10 @@
       "id": "iv-search-kinds",
       "doc": "docs/index-versions.md",
       "doc_lines": [
-        35,
-        35
+        37,
+        38
       ],
-      "text": "Search filters passages to the kinds content, summary and glossary.",
+      "text": "Search returns only content, summary and glossary passages, whatever INDEX_VERSION is.",
       "sources": [
         {
           "path": "src/med_ask/retrieval.py",
@@ -2807,8 +3179,8 @@
       "id": "iv-timeout-default",
       "doc": "docs/index-versions.md",
       "doc_lines": [
-        55,
-        55
+        57,
+        57
       ],
       "text": "EMBEDDING_TIMEOUT defaults to 20 seconds.",
       "sources": [
@@ -2825,8 +3197,8 @@
       "id": "iv-copy-library",
       "doc": "docs/index-versions.md",
       "doc_lines": [
-        63,
-        65
+        65,
+        67
       ],
       "text": "The vector store creates its table when opened with setup, and Database.register and book_count record a table's model and book counts.",
       "sources": [
@@ -2857,8 +3229,8 @@
       "id": "iv-switch-compose",
       "doc": "docs/index-versions.md",
       "doc_lines": [
-        122,
-        123
+        124,
+        125
       ],
       "text": "Compose passes INDEX_VERSION, EMBEDDING_PURPOSE and EMBEDDING_ROLES to app, public and ingest.",
       "sources": [
@@ -2889,8 +3261,8 @@
       "id": "iv-merge-no-switch",
       "doc": "docs/index-versions.md",
       "doc_lines": [
-        123,
-        124
+        125,
+        126
       ],
       "text": "The served version comes from INDEX_VERSION in the environment, defaulting to v2.",
       "sources": [
@@ -3096,8 +3468,8 @@
       "id": "ex-contents-excluded",
       "doc": "docs/extraction.md",
       "doc_lines": [
-        28,
-        29
+        29,
+        30
       ],
       "text": "Contents and index sections are excluded in text layers and readings using the same titles.",
       "sources": [
@@ -3121,8 +3493,8 @@
       "id": "ex-reading-sections",
       "doc": "docs/extraction.md",
       "doc_lines": [
-        29,
-        31
+        30,
+        32
       ],
       "text": "A new chapter or front-matter heading closes the prior section, while repeated headers of the same chapter keep its subsection.",
       "sources": [
@@ -3146,8 +3518,8 @@
       "id": "ex-reading-headings",
       "doc": "docs/extraction.md",
       "doc_lines": [
-        31,
-        33
+        32,
+        34
       ],
       "text": "Reading headings are kind titles, chapter and numbered section titles, PDF-confirmed headings, or short uppercase or title-case lines of at most 14 words and 120 characters.",
       "sources": [
@@ -3164,8 +3536,8 @@
       "id": "ex-heading-levels",
       "doc": "docs/extraction.md",
       "doc_lines": [
-        33,
-        34
+        34,
+        35
       ],
       "text": "Matching PDF heading sizes set the hierarchy, otherwise headings use one peer level.",
       "sources": [
@@ -3189,7 +3561,7 @@
       "id": "ex-readings-paragraphs",
       "doc": "docs/extraction.md",
       "doc_lines": [
-        38,
+        39,
         40
       ],
       "text": "Without readings legacy boundaries are kept, and each reading paragraph becomes one passage.",
@@ -3214,15 +3586,15 @@
       "id": "ex-watermark",
       "doc": "docs/extraction.md",
       "doc_lines": [
-        39,
-        39
+        40,
+        41
       ],
-      "text": "Reading lines drop the preview-watermark words Copyrighted material.",
+      "text": "Reading lines have the preview-watermark words Copyrighted material removed, while the adjoining text and numbers stay.",
       "sources": [
         {
           "path": "src/med_ask/ocr.py",
           "lines": [
-            118,
+            117,
             121
           ]
         }
@@ -3232,8 +3604,8 @@
       "id": "ex-loop-cut",
       "doc": "docs/extraction.md",
       "doc_lines": [
-        40,
-        43
+        41,
+        44
       ],
       "text": "Sustained repetition of a 1–64-token pattern in eight copies over 64 tokens and 200 characters, or 200 copies of one horizontal whitespace character, cuts the tail.",
       "sources": [
@@ -3250,8 +3622,8 @@
       "id": "ex-failed-readings",
       "doc": "docs/extraction.md",
       "doc_lines": [
-        43,
-        44
+        44,
+        45
       ],
       "text": "Reading passages keep their failed rules as check_page and ocr_reasons, and the browser labels them from OCR — check the page.",
       "sources": [
@@ -3275,8 +3647,8 @@
       "id": "ex-joins",
       "doc": "docs/extraction.md",
       "doc_lines": [
-        48,
-        50
+        49,
+        51
       ],
       "text": "Unfinished content sentences join the next passage in the same book and section when it starts lower case or ends hyphenated, removing the hyphen.",
       "sources": [
@@ -3297,21 +3669,39 @@
       ]
     },
     {
-      "id": "ex-join-limits",
+      "id": "ex-join-skip",
       "doc": "docs/extraction.md",
       "doc_lines": [
-        50,
+        51,
         52
       ],
-      "text": "Joins skip only body-free pages, never hidden ones, and exclude inherited OCR, failed readings and non-content kinds.",
+      "text": "Only pages without body passages may lie between joined passages, and none may be hidden.",
       "sources": [
         {
           "path": "src/med_ask/extract.py",
           "lines": [
             1798,
-            1800
+            1799
           ]
         },
+        {
+          "path": "src/med_ask/extract.py",
+          "lines": [
+            1813,
+            1819
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ex-join-excludes",
+      "doc": "docs/extraction.md",
+      "doc_lines": [
+        52,
+        53
+      ],
+      "text": "The page-join pass excludes inherited OCR, readings that failed a rule, and every kind but content.",
+      "sources": [
         {
           "path": "src/med_ask/extract.py",
           "lines": [
@@ -3322,11 +3712,36 @@
       ]
     },
     {
+      "id": "ex-join-legacy-inherited",
+      "doc": "docs/extraction.md",
+      "doc_lines": [
+        53,
+        54
+      ],
+      "text": "Without kept readings, the legacy paragraph reassembly can still join inherited-OCR text across pages, as a synthetic scanned page followed by a born-digital page shows.",
+      "sources": [
+        {
+          "path": "src/med_ask/extract.py",
+          "lines": [
+            1711,
+            1718
+          ]
+        },
+        {
+          "path": "tests/test_extract.py",
+          "lines": [
+            301,
+            327
+          ]
+        }
+      ]
+    },
+    {
       "id": "ex-join-ranges",
       "doc": "docs/extraction.md",
       "doc_lines": [
-        52,
-        52
+        54,
+        55
       ],
       "text": "A joined passage's PDF and printed ranges are extended across the join.",
       "sources": [
@@ -4043,6 +4458,31 @@
       ]
     },
     {
+      "id": "fig-panel-opening",
+      "doc": "docs/figures.md",
+      "doc_lines": [
+        33,
+        35
+      ],
+      "text": "A panel's opening text is kept only when it has at most PASSARGE_OPENING_LIMIT characters and at most a third of the panel's text.",
+      "sources": [
+        {
+          "path": "src/med_ask/figures.py",
+          "lines": [
+            30,
+            30
+          ]
+        },
+        {
+          "path": "src/med_ask/figures.py",
+          "lines": [
+            237,
+            237
+          ]
+        }
+      ]
+    },
+    {
       "id": "fig-panel-links",
       "doc": "docs/figures.md",
       "doc_lines": [
@@ -4086,13 +4526,13 @@
       ]
     },
     {
-      "id": "fig-slots",
+      "id": "fig-slots-cap",
       "doc": "docs/figures.md",
       "doc_lines": [
         42,
         45
       ],
-      "text": "FIGURE_CANDIDATES (default 4) caps figures; half go to direct matches, then same-book referenced figures in passage order, then more direct matches.",
+      "text": "FIGURE_CANDIDATES, defaulting to 4, caps the figures a search returns.",
       "sources": [
         {
           "path": "src/med_ask/retrieval.py",
@@ -4100,7 +4540,18 @@
             490,
             490
           ]
-        },
+        }
+      ]
+    },
+    {
+      "id": "fig-slots-direct",
+      "doc": "docs/figures.md",
+      "doc_lines": [
+        42,
+        45
+      ],
+      "text": "Half of the figure slots go to direct figure matches first.",
+      "sources": [
         {
           "path": "src/med_ask/retrieval.py",
           "lines": [
@@ -4114,7 +4565,18 @@
             504,
             505
           ]
-        },
+        }
+      ]
+    },
+    {
+      "id": "fig-slots-referenced",
+      "doc": "docs/figures.md",
+      "doc_lines": [
+        42,
+        45
+      ],
+      "text": "Then figures referenced by the retrieved passages in the same book fill slots in passage order, and unused slots go to further direct matches.",
+      "sources": [
         {
           "path": "src/med_ask/retrieval.py",
           "lines": [
@@ -4334,7 +4796,7 @@
         13,
         15
       ],
-      "text": "Search retrieves PASSAGE_CANDIDATES passages (default 26) and, from v5, up to FIGURE_CANDIDATES figures (default 4), then grades each candidate.",
+      "text": "Search retrieves PASSAGE_CANDIDATES passages, defaulting to 26, and from v5 figures, then sends each candidate to grade.",
       "sources": [
         {
           "path": "src/med_ask/__init__.py",
@@ -4346,8 +4808,8 @@
         {
           "path": "src/med_ask/retrieval.py",
           "lines": [
-            490,
-            490
+            448,
+            449
           ]
         },
         {
@@ -4975,26 +5437,55 @@
       ]
     },
     {
-      "id": "se-no-identity-sent",
+      "id": "se-no-identity-grade",
       "doc": "docs/search.md",
       "doc_lines": [
         74,
         75
       ],
-      "text": "Grade, answer and translation messages contain only question and passage text.",
+      "text": "No asker identity is in a grade message, which carries only the question, the passage text and a figure's label.",
       "sources": [
         {
           "path": "src/med_ask/generation.py",
           "lines": [
-            125,
+            123,
             133
           ]
-        },
+        }
+      ]
+    },
+    {
+      "id": "se-no-identity-answer",
+      "doc": "docs/search.md",
+      "doc_lines": [
+        74,
+        75
+      ],
+      "text": "No asker identity is in an answer message, which carries only the question and the numbered passage texts.",
+      "sources": [
         {
           "path": "src/med_ask/generation.py",
           "lines": [
             210,
-            216
+            218
+          ]
+        }
+      ]
+    },
+    {
+      "id": "se-no-identity-translate",
+      "doc": "docs/search.md",
+      "doc_lines": [
+        74,
+        75
+      ],
+      "text": "No asker identity is in a translation message, which carries only the translation instruction and the passage text.",
+      "sources": [
+        {
+          "path": "src/med_ask/generation.py",
+          "lines": [
+            267,
+            282
           ]
         }
       ]
@@ -5464,72 +5955,141 @@
       ]
     },
     {
-      "id": "ev-figure-gate-inputs",
+      "id": "ev-fg-pairs",
       "doc": "docs/evaluation.md",
       "doc_lines": [
         68,
         69
       ],
-      "text": "The figure gate accepts only v4/v5 or v5/v6 runs on eval set 2 with embed-large and roles off, the same 32 scored ids and 20 cohort ids among them.",
+      "text": "The figure gate accepts only a v4 baseline with a v5 candidate, or a v5 baseline with a v6 candidate, whose tables carry those versions.",
       "sources": [
         {
           "path": "src/med_ask/evaluation.py",
           "lines": [
-            552,
-            554
+            559,
+            559
           ]
         },
         {
           "path": "src/med_ask/evaluation.py",
           "lines": [
             563,
-            563
-          ]
-        },
-        {
-          "path": "src/med_ask/evaluation.py",
-          "lines": [
-            575,
-            575
-          ]
-        },
-        {
-          "path": "src/med_ask/evaluation.py",
-          "lines": [
-            587,
-            589
-          ]
-        },
-        {
-          "path": "src/med_ask/ingest.py",
-          "lines": [
-            55,
-            55
+            567
           ]
         }
       ]
     },
     {
-      "id": "ev-figure-gate-pass",
+      "id": "ev-fg-set-purpose",
       "doc": "docs/evaluation.md",
       "doc_lines": [
-        70,
-        72
+        68,
+        69
       ],
-      "text": "The baseline must have Hit@10 32 overall and 20 on the cohort, the candidate passes only by matching both, and Hit@5 and Hit@10 are reported.",
+      "text": "The figure gate requires eval set version 2, the embed-large purpose and roles off in both runs.",
       "sources": [
         {
           "path": "src/med_ask/evaluation.py",
           "lines": [
-            607,
-            614
+            561,
+            562
           ]
         },
         {
           "path": "src/med_ask/evaluation.py",
           "lines": [
-            555,
-            555
+            574,
+            577
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ev-fg-passages-only",
+      "doc": "docs/evaluation.md",
+      "doc_lines": [
+        69,
+        69
+      ],
+      "text": "A v5 and v6 pair must also rank passages only, with ranking_scope passages.",
+      "sources": [
+        {
+          "path": "src/med_ask/evaluation.py",
+          "lines": [
+            568,
+            573
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ev-fg-same-ids",
+      "doc": "docs/evaluation.md",
+      "doc_lines": [
+        69,
+        70
+      ],
+      "text": "Both runs must score the same 32 ids, and the 20 cohort ids must be among them.",
+      "sources": [
+        {
+          "path": "src/med_ask/evaluation.py",
+          "lines": [
+            583,
+            591
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ev-fg-baseline",
+      "doc": "docs/evaluation.md",
+      "doc_lines": [
+        71,
+        73
+      ],
+      "text": "The baseline must reach Hit@10 32 overall and 20 on the cohort, or the gate refuses.",
+      "sources": [
+        {
+          "path": "src/med_ask/evaluation.py",
+          "lines": [
+            605,
+            612
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ev-fg-candidate",
+      "doc": "docs/evaluation.md",
+      "doc_lines": [
+        71,
+        73
+      ],
+      "text": "The candidate passes only when it also reaches Hit@10 32 overall and 20 on the cohort.",
+      "sources": [
+        {
+          "path": "src/med_ask/evaluation.py",
+          "lines": [
+            613,
+            615
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ev-fg-report",
+      "doc": "docs/evaluation.md",
+      "doc_lines": [
+        71,
+        73
+      ],
+      "text": "The gate reports Hit@5 and Hit@10 overall and for the cohort.",
+      "sources": [
+        {
+          "path": "src/med_ask/evaluation.py",
+          "lines": [
+            593,
+            604
           ]
         }
       ]
@@ -5538,8 +6098,8 @@
       "id": "ev-real-file",
       "doc": "docs/evaluation.md",
       "doc_lines": [
-        77,
-        79
+        78,
+        80
       ],
       "text": "Real-case modes read REAL_EVAL_FILE or the default real-case labels, and exit 0 with Nothing labelled yet when empty.",
       "sources": [
@@ -5563,8 +6123,8 @@
       "id": "ev-served",
       "doc": "docs/evaluation.md",
       "doc_lines": [
-        86,
-        87
+        87,
+        88
       ],
       "text": "Served mode builds no endpoint and recovers candidates by node id from the recorded vector_table in logged rank order.",
       "sources": [
@@ -5588,8 +6148,8 @@
       "id": "ev-unscorable",
       "doc": "docs/evaluation.md",
       "doc_lines": [
-        87,
-        89
+        88,
+        90
       ],
       "text": "In served mode a log without grades is reported unscorable with reason logged before grading.",
       "sources": [
@@ -5606,8 +6166,8 @@
       "id": "ev-unresolved",
       "doc": "docs/evaluation.md",
       "doc_lines": [
-        89,
-        90
+        90,
+        91
       ],
       "text": "Candidates without recovered pages are counted as unresolved.",
       "sources": [
@@ -5624,8 +6184,8 @@
       "id": "ev-end-to-end",
       "doc": "docs/evaluation.md",
       "doc_lines": [
-        92,
-        93
+        93,
+        94
       ],
       "text": "End-to-end mode reruns search and grading without generating answers or changing labels or logs.",
       "sources": [
@@ -5649,8 +6209,8 @@
       "id": "ev-in-scope-measures",
       "doc": "docs/evaluation.md",
       "doc_lines": [
-        95,
-        97
+        96,
+        98
       ],
       "text": "In-scope results report returned, passed, hit10 and hit at the cut, and served mode counts every logged candidate for the cut.",
       "sources": [
@@ -5667,8 +6227,8 @@
       "id": "ev-out-of-sources",
       "doc": "docs/evaluation.md",
       "doc_lines": [
-        97,
-        98
+        98,
+        99
       ],
       "text": "Out-of-sources results report correct_not_found when nothing passed and list wrongly_passed ids.",
       "sources": [
@@ -5685,8 +6245,8 @@
       "id": "ev-ungraded-table",
       "doc": "docs/evaluation.md",
       "doc_lines": [
-        99,
-        100
+        100,
+        101
       ],
       "text": "Each real-case result records its table and its count of candidates with no grade.",
       "sources": [
@@ -5977,6 +6537,74 @@
           "lines": [
             71,
             74
+          ]
+        }
+      ]
+    },
+    {
+      "id": "nav-report-counts",
+      "doc": "docs/navigation.md",
+      "doc_lines": [
+        44,
+        45
+      ],
+      "text": "The navigation report is counts only and holds a seeded precision sample and contents coverage.",
+      "sources": [
+        {
+          "path": "src/med_ask/navigation.py",
+          "lines": [
+            263,
+            268
+          ]
+        },
+        {
+          "path": "src/med_ask/navigation.py",
+          "lines": [
+            349,
+            349
+          ]
+        }
+      ]
+    },
+    {
+      "id": "nav-thin-contents",
+      "doc": "docs/navigation.md",
+      "doc_lines": [
+        47,
+        48
+      ],
+      "text": "The report marks contents as thin when they have fewer than two levels or cover under half the content pages.",
+      "sources": [
+        {
+          "path": "src/med_ask/navigation.py",
+          "lines": [
+            316,
+            316
+          ]
+        },
+        {
+          "path": "src/med_ask/navigation.py",
+          "lines": [
+            350,
+            350
+          ]
+        }
+      ]
+    },
+    {
+      "id": "nav-chapter-coverage",
+      "doc": "docs/navigation.md",
+      "doc_lines": [
+        53,
+        53
+      ],
+      "text": "The report's chapter_entry_coverage marks chapter numbers 1 through the highest observed one by whether a chapter entry exists, which is a diagnostic and not a verified total.",
+      "sources": [
+        {
+          "path": "src/med_ask/navigation.py",
+          "lines": [
+            341,
+            347
           ]
         }
       ]
@@ -6409,13 +7037,34 @@
         10,
         11
       ],
-      "text": "The label blueprint and button exist only with private routes on.",
+      "text": "Only the app, with PRIVATE_ROUTES_ENABLED equal to true, registers the label blueprint, and the front end shows Label questions only when the private ping answers.",
       "sources": [
+        {
+          "path": "src/med_ask/__init__.py",
+          "lines": [
+            44,
+            44
+          ]
+        },
         {
           "path": "src/med_ask/__init__.py",
           "lines": [
             55,
             57
+          ]
+        },
+        {
+          "path": "src/med_ask/labels.py",
+          "lines": [
+            262,
+            262
+          ]
+        },
+        {
+          "path": "frontend/src/main.jsx",
+          "lines": [
+            26,
+            26
           ]
         },
         {
@@ -6705,6 +7354,925 @@
           "lines": [
             206,
             206
+          ]
+        }
+      ]
+    },
+    {
+      "id": "readme-passages-first",
+      "doc": "README.md",
+      "doc_lines": [
+        3,
+        3
+      ],
+      "text": "Search returns the original passages, with book and page, and the generated answer is requested afterwards.",
+      "sources": [
+        {
+          "path": "src/med_ask/retrieval.py",
+          "lines": [
+            96,
+            121
+          ]
+        },
+        {
+          "path": "src/med_ask/__init__.py",
+          "lines": [
+            206,
+            212
+          ]
+        }
+      ]
+    },
+    {
+      "id": "readme-search-pages",
+      "doc": "README.md",
+      "doc_lines": [
+        14,
+        14
+      ],
+      "text": "Search results carry the book, the PDF page and the printed page.",
+      "sources": [
+        {
+          "path": "src/med_ask/retrieval.py",
+          "lines": [
+            100,
+            104
+          ]
+        },
+        {
+          "path": "src/med_ask/retrieval.py",
+          "lines": [
+            118,
+            120
+          ]
+        }
+      ]
+    },
+    {
+      "id": "readme-grading",
+      "doc": "README.md",
+      "doc_lines": [
+        15,
+        15
+      ],
+      "text": "Each candidate is sent to the grade purpose, and only candidates graded yes are shown.",
+      "sources": [
+        {
+          "path": "src/med_ask/generation.py",
+          "lines": [
+            84,
+            86
+          ]
+        },
+        {
+          "path": "src/med_ask/generation.py",
+          "lines": [
+            147,
+            149
+          ]
+        }
+      ]
+    },
+    {
+      "id": "readme-answer",
+      "doc": "README.md",
+      "doc_lines": [
+        16,
+        16
+      ],
+      "text": "The generated answer is limited to 150 words and the browser shows it under a Generated answer heading, apart from the sources.",
+      "sources": [
+        {
+          "path": "src/med_ask/generation.py",
+          "lines": [
+            192,
+            192
+          ]
+        },
+        {
+          "path": "frontend/src/main.jsx",
+          "lines": [
+            128,
+            130
+          ]
+        }
+      ]
+    },
+    {
+      "id": "readme-figures-caption",
+      "doc": "README.md",
+      "doc_lines": [
+        17,
+        17
+      ],
+      "text": "A figure node's text is its printed label followed by its printed caption.",
+      "sources": [
+        {
+          "path": "src/med_ask/retrieval.py",
+          "lines": [
+            321,
+            338
+          ]
+        }
+      ]
+    },
+    {
+      "id": "readme-figure-page",
+      "doc": "README.md",
+      "doc_lines": [
+        17,
+        17
+      ],
+      "text": "Opening a figure opens Review source at the plate or page, which the page route renders whole.",
+      "sources": [
+        {
+          "path": "frontend/src/source-label.js",
+          "lines": [
+            7,
+            14
+          ]
+        },
+        {
+          "path": "src/med_ask/__init__.py",
+          "lines": [
+            296,
+            313
+          ]
+        }
+      ]
+    },
+    {
+      "id": "readme-nav-kinds",
+      "doc": "README.md",
+      "doc_lines": [
+        18,
+        18
+      ],
+      "text": "Navigation links figure, table, section, chapter and page references, and a reference opens a quick look.",
+      "sources": [
+        {
+          "path": "src/med_ask/navigation.py",
+          "lines": [
+            25,
+            25
+          ]
+        },
+        {
+          "path": "frontend/src/linked-passage.jsx",
+          "lines": [
+            5,
+            8
+          ]
+        }
+      ]
+    },
+    {
+      "id": "readme-viewer",
+      "doc": "README.md",
+      "doc_lines": [
+        18,
+        18
+      ],
+      "text": "Review source opens the book viewer with breadcrumbs and a contents tree.",
+      "sources": [
+        {
+          "path": "frontend/src/main.jsx",
+          "lines": [
+            164,
+            164
+          ]
+        },
+        {
+          "path": "frontend/src/book-viewer.jsx",
+          "lines": [
+            52,
+            56
+          ]
+        }
+      ]
+    },
+    {
+      "id": "readme-ocr-vision",
+      "doc": "README.md",
+      "doc_lines": [
+        19,
+        19
+      ],
+      "text": "Scanned pages are read through the vision purpose.",
+      "sources": [
+        {
+          "path": "src/med_ask/ocr.py",
+          "lines": [
+            78,
+            78
+          ]
+        }
+      ]
+    },
+    {
+      "id": "readme-ocr-label",
+      "doc": "README.md",
+      "doc_lines": [
+        19,
+        19
+      ],
+      "text": "Doubtful pages are marked from OCR — check the page: inherited-OCR passages and readings that failed a rule carry that label.",
+      "sources": [
+        {
+          "path": "frontend/src/source-label.js",
+          "lines": [
+            3,
+            3
+          ]
+        }
+      ]
+    },
+    {
+      "id": "readme-one-container",
+      "doc": "README.md",
+      "doc_lines": [
+        33,
+        33
+      ],
+      "text": "Gunicorn serves the Flask app, the built React 19 and Vite interface and the API from one image.",
+      "sources": [
+        {
+          "path": "Dockerfile",
+          "lines": [
+            26,
+            26
+          ]
+        },
+        {
+          "path": "Dockerfile",
+          "lines": [
+            29,
+            29
+          ]
+        },
+        {
+          "path": "frontend/package.json",
+          "lines": [
+            10,
+            15
+          ]
+        },
+        {
+          "path": "src/med_ask/__init__.py",
+          "lines": [
+            340,
+            351
+          ]
+        }
+      ]
+    },
+    {
+      "id": "readme-pymupdf",
+      "doc": "README.md",
+      "doc_lines": [
+        34,
+        34
+      ],
+      "text": "PyMuPDF reads the pages.",
+      "sources": [
+        {
+          "path": "src/med_ask/extract.py",
+          "lines": [
+            1287,
+            1287
+          ]
+        },
+        {
+          "path": "pyproject.toml",
+          "lines": [
+            15,
+            15
+          ]
+        }
+      ]
+    },
+    {
+      "id": "readme-llamaindex",
+      "doc": "README.md",
+      "doc_lines": [
+        34,
+        34
+      ],
+      "text": "LlamaIndex's PGVectorStore holds the index in Postgres with pgvector.",
+      "sources": [
+        {
+          "path": "src/med_ask/retrieval.py",
+          "lines": [
+            224,
+            241
+          ]
+        }
+      ]
+    },
+    {
+      "id": "readme-purposes",
+      "doc": "README.md",
+      "doc_lines": [
+        35,
+        35
+      ],
+      "text": "Models are called by purpose in the model field through an OpenAI client whose base URL and key come from MODEL_BASE_URL and MODEL_API_KEY.",
+      "sources": [
+        {
+          "path": "src/med_ask/embedding.py",
+          "lines": [
+            27,
+            29
+          ]
+        },
+        {
+          "path": "src/med_ask/generation.py",
+          "lines": [
+            57,
+            58
+          ]
+        }
+      ]
+    },
+    {
+      "id": "readme-purpose-names",
+      "doc": "README.md",
+      "doc_lines": [
+        35,
+        35
+      ],
+      "text": "The chat, embed, grade and vision purposes are named in code.",
+      "sources": [
+        {
+          "path": "src/med_ask/embedding.py",
+          "lines": [
+            21,
+            21
+          ]
+        },
+        {
+          "path": "src/med_ask/generation.py",
+          "lines": [
+            103,
+            103
+          ]
+        },
+        {
+          "path": "src/med_ask/generation.py",
+          "lines": [
+            227,
+            227
+          ]
+        },
+        {
+          "path": "src/med_ask/ocr.py",
+          "lines": [
+            78,
+            78
+          ]
+        }
+      ]
+    },
+    {
+      "id": "readme-home-lab",
+      "doc": "README.md",
+      "doc_lines": [
+        36,
+        36
+      ],
+      "text": "The services join the external homelab-models network that Home Lab provides.",
+      "sources": [
+        {
+          "path": "compose.yaml",
+          "lines": [
+            105,
+            106
+          ]
+        }
+      ]
+    },
+    {
+      "id": "readme-sources-first",
+      "doc": "README.md",
+      "doc_lines": [
+        40,
+        40
+      ],
+      "text": "The browser shows the Generated answer panel separately from the source list.",
+      "sources": [
+        {
+          "path": "frontend/src/main.jsx",
+          "lines": [
+            128,
+            130
+          ]
+        }
+      ]
+    },
+    {
+      "id": "readme-code-only",
+      "doc": "README.md",
+      "doc_lines": [
+        41,
+        41
+      ],
+      "text": "The no-data guard rejects tracked data extensions and forbidden directories, and CI runs it.",
+      "sources": [
+        {
+          "path": "scripts/check_no_data.py",
+          "lines": [
+            9,
+            19
+          ]
+        },
+        {
+          "path": ".github/workflows/ci.yml",
+          "lines": [
+            48,
+            48
+          ]
+        }
+      ]
+    },
+    {
+      "id": "readme-synthetic-tests",
+      "doc": "README.md",
+      "doc_lines": [
+        41,
+        41
+      ],
+      "text": "Tests use synthetic content: a test builds its PDF at runtime in a temporary path.",
+      "sources": [
+        {
+          "path": "tests/test_extract.py",
+          "lines": [
+            301,
+            318
+          ]
+        }
+      ]
+    },
+    {
+      "id": "readme-index-version",
+      "doc": "README.md",
+      "doc_lines": [
+        42,
+        42
+      ],
+      "text": "Indexes are named with INDEX_VERSION.",
+      "sources": [
+        {
+          "path": "src/med_ask/retrieval.py",
+          "lines": [
+            131,
+            139
+          ]
+        }
+      ]
+    },
+    {
+      "id": "readme-switch-gate",
+      "doc": "README.md",
+      "doc_lines": [
+        42,
+        42
+      ],
+      "text": "A new index is judged by the comparison gate, which passes a candidate only when total Hit@5 does not drop and lost questions are balanced by gained ones.",
+      "sources": [
+        {
+          "path": "src/med_ask/evaluation.py",
+          "lines": [
+            499,
+            503
+          ]
+        },
+        {
+          "path": "src/med_ask/evaluation.py",
+          "lines": [
+            520,
+            520
+          ]
+        }
+      ]
+    },
+    {
+      "id": "readme-real-eval",
+      "doc": "README.md",
+      "doc_lines": [
+        43,
+        43
+      ],
+      "text": "A label record takes its question from a logged question.",
+      "sources": [
+        {
+          "path": "src/med_ask/labels.py",
+          "lines": [
+            193,
+            207
+          ]
+        }
+      ]
+    },
+    {
+      "id": "readme-python-node",
+      "doc": "README.md",
+      "doc_lines": [
+        54,
+        54
+      ],
+      "text": "The project requires Python 3.13 or later, and CI uses Python 3.13 and Node 24.",
+      "sources": [
+        {
+          "path": "pyproject.toml",
+          "lines": [
+            5,
+            5
+          ]
+        },
+        {
+          "path": ".github/workflows/ci.yml",
+          "lines": [
+            36,
+            36
+          ]
+        },
+        {
+          "path": ".github/workflows/ci.yml",
+          "lines": [
+            40,
+            40
+          ]
+        }
+      ]
+    },
+    {
+      "id": "readme-local-checks",
+      "doc": "README.md",
+      "doc_lines": [
+        57,
+        64
+      ],
+      "text": "The local checks are the uv, pytest, ruff, no-data guard, npm and gitleaks commands that CI runs.",
+      "sources": [
+        {
+          "path": ".github/workflows/ci.yml",
+          "lines": [
+            37,
+            37
+          ]
+        },
+        {
+          "path": ".github/workflows/ci.yml",
+          "lines": [
+            43,
+            48
+          ]
+        },
+        {
+          "path": ".github/workflows/ci.yml",
+          "lines": [
+            54,
+            54
+          ]
+        }
+      ]
+    },
+    {
+      "id": "readme-guard-tracked",
+      "doc": "README.md",
+      "doc_lines": [
+        67,
+        67
+      ],
+      "text": "The guard lists tracked files with git ls-files, and the front-end build output directory dist is git-ignored.",
+      "sources": [
+        {
+          "path": "scripts/check_no_data.py",
+          "lines": [
+            100,
+            100
+          ]
+        },
+        {
+          "path": ".gitignore",
+          "lines": [
+            32,
+            32
+          ]
+        }
+      ]
+    },
+    {
+      "id": "readme-env-file",
+      "doc": "README.md",
+      "doc_lines": [
+        71,
+        71
+      ],
+      "text": "The .env.example file holds a password placeholder, .env is git-ignored, and the Docker context excludes everything it does not list.",
+      "sources": [
+        {
+          "path": ".env.example",
+          "lines": [
+            1,
+            2
+          ]
+        },
+        {
+          "path": ".gitignore",
+          "lines": [
+            21,
+            22
+          ]
+        },
+        {
+          "path": ".dockerignore",
+          "lines": [
+            1,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "id": "readme-loopback-8100",
+      "doc": "README.md",
+      "doc_lines": [
+        77,
+        77
+      ],
+      "text": "The app is published on port 8100 of APP_BIND_ADDRESS, which defaults to loopback.",
+      "sources": [
+        {
+          "path": "compose.yaml",
+          "lines": [
+            6,
+            6
+          ]
+        }
+      ]
+    },
+    {
+      "id": "readme-health",
+      "doc": "README.md",
+      "doc_lines": [
+        82,
+        82
+      ],
+      "text": "The health route returns postgres ok and vector ok when Postgres answers and the vector extension exists, and HTTP 503 otherwise.",
+      "sources": [
+        {
+          "path": "src/med_ask/__init__.py",
+          "lines": [
+            319,
+            338
+          ]
+        }
+      ]
+    },
+    {
+      "id": "readme-unknown-api",
+      "doc": "README.md",
+      "doc_lines": [
+        82,
+        82
+      ],
+      "text": "Unknown /api/ paths return 404 with an Unknown API route error.",
+      "sources": [
+        {
+          "path": "src/med_ask/__init__.py",
+          "lines": [
+            342,
+            344
+          ]
+        }
+      ]
+    },
+    {
+      "id": "readme-access",
+      "doc": "README.md",
+      "doc_lines": [
+        84,
+        84
+      ],
+      "text": "The public service takes the asker from the Cloudflare Access header and is reached through cloudflared.",
+      "sources": [
+        {
+          "path": "src/med_ask/__init__.py",
+          "lines": [
+            94,
+            100
+          ]
+        },
+        {
+          "path": "compose.yaml",
+          "lines": [
+            68,
+            77
+          ]
+        }
+      ]
+    },
+    {
+      "id": "readme-private-tailnet",
+      "doc": "README.md",
+      "doc_lines": [
+        84,
+        84
+      ],
+      "text": "Private routes are on only in app, which publishes on APP_BIND_ADDRESS.",
+      "sources": [
+        {
+          "path": "compose.yaml",
+          "lines": [
+            6,
+            9
+          ]
+        },
+        {
+          "path": "src/med_ask/__init__.py",
+          "lines": [
+            44,
+            44
+          ]
+        }
+      ]
+    },
+    {
+      "id": "readme-structure-src",
+      "doc": "README.md",
+      "doc_lines": [
+        89,
+        89
+      ],
+      "text": "The Flask app lives in src/med_ask.",
+      "sources": [
+        {
+          "path": "src/med_ask/__init__.py",
+          "lines": [
+            32,
+            32
+          ]
+        }
+      ]
+    },
+    {
+      "id": "readme-structure-frontend",
+      "doc": "README.md",
+      "doc_lines": [
+        90,
+        90
+      ],
+      "text": "The React interface and its Vite build live in frontend.",
+      "sources": [
+        {
+          "path": "frontend/package.json",
+          "lines": [
+            7,
+            7
+          ]
+        }
+      ]
+    },
+    {
+      "id": "readme-structure-deploy",
+      "doc": "README.md",
+      "doc_lines": [
+        91,
+        91
+      ],
+      "text": "The systemd service and timer units live in deploy.",
+      "sources": [
+        {
+          "path": "deploy/med-ask.service",
+          "lines": [
+            1,
+            1
+          ]
+        },
+        {
+          "path": "deploy/med-ask-export.timer",
+          "lines": [
+            1,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "id": "readme-structure-scripts",
+      "doc": "README.md",
+      "doc_lines": [
+        92,
+        92
+      ],
+      "text": "The repository check scripts live in scripts.",
+      "sources": [
+        {
+          "path": "scripts/check_no_data.py",
+          "lines": [
+            1,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "id": "readme-structure-postgres",
+      "doc": "README.md",
+      "doc_lines": [
+        93,
+        93
+      ],
+      "text": "The database initialization script lives in postgres.",
+      "sources": [
+        {
+          "path": "postgres/init.sql",
+          "lines": [
+            1,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "id": "readme-structure-tests",
+      "doc": "README.md",
+      "doc_lines": [
+        94,
+        94
+      ],
+      "text": "The automated tests live in tests.",
+      "sources": [
+        {
+          "path": "tests/test_docs_links.py",
+          "lines": [
+            1,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "id": "readme-structure-diagrams",
+      "doc": "README.md",
+      "doc_lines": [
+        95,
+        95
+      ],
+      "text": "The README diagrams are light and dark SVG files in docs/diagrams.",
+      "sources": [
+        {
+          "path": "docs/diagrams/architecture-light.svg",
+          "lines": [
+            1,
+            1
+          ]
+        },
+        {
+          "path": "docs/diagrams/architecture-dark.svg",
+          "lines": [
+            1,
+            1
+          ]
+        },
+        {
+          "path": "docs/diagrams/question-light.svg",
+          "lines": [
+            1,
+            1
+          ]
+        },
+        {
+          "path": "docs/diagrams/question-dark.svg",
+          "lines": [
+            1,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "id": "readme-licence",
+      "doc": "README.md",
+      "doc_lines": [
+        102,
+        102
+      ],
+      "text": "The licence is AGPL-3.0, as the LICENSE file and the AGPL-3.0-only project metadata state.",
+      "sources": [
+        {
+          "path": "LICENSE",
+          "lines": [
+            1,
+            1
+          ]
+        },
+        {
+          "path": "pyproject.toml",
+          "lines": [
+            6,
+            6
           ]
         }
       ]
@@ -7143,7 +8711,7 @@
       "to": "extraction",
       "how": "call",
       "contract": null,
-      "text": "Ingestion and status extract each book's passages and figures before indexing.",
+      "text": "ingest_book extracts a book's passages and figures before it indexes them, while ingest_status extracts them only to count and compare stored ids and indexes nothing; the ingest and status commands call them.",
       "provider_sources": [
         {
           "path": "src/med_ask/extract.py",
@@ -7159,6 +8727,20 @@
           "lines": [
             385,
             386
+          ]
+        },
+        {
+          "path": "src/med_ask/retrieval.py",
+          "lines": [
+            551,
+            551
+          ]
+        },
+        {
+          "path": "src/med_ask/ingest.py",
+          "lines": [
+            267,
+            271
           ]
         }
       ]
@@ -7389,6 +8971,268 @@
           ]
         }
       ]
+    },
+    {
+      "id": "frontend-public",
+      "from": "frontend",
+      "to": "public",
+      "how": "call",
+      "text": "The front end is served by public and calls its /api routes.",
+      "provider_sources": [
+        {
+          "path": "src/med_ask/__init__.py",
+          "lines": [
+            340,
+            351
+          ]
+        }
+      ],
+      "user_sources": [
+        {
+          "path": "frontend/src/main.jsx",
+          "lines": [
+            58,
+            58
+          ]
+        },
+        {
+          "path": "frontend/src/main.jsx",
+          "lines": [
+            66,
+            66
+          ]
+        },
+        {
+          "path": "compose.yaml",
+          "lines": [
+            29,
+            31
+          ]
+        }
+      ]
+    },
+    {
+      "id": "public-retrieval",
+      "from": "public",
+      "to": "retrieval",
+      "how": "call",
+      "text": "The search route that public serves calls retrieval's search with the purpose embedding endpoint.",
+      "provider_sources": [
+        {
+          "path": "src/med_ask/retrieval.py",
+          "lines": [
+            444,
+            444
+          ]
+        }
+      ],
+      "user_sources": [
+        {
+          "path": "src/med_ask/__init__.py",
+          "lines": [
+            131,
+            136
+          ]
+        },
+        {
+          "path": "compose.yaml",
+          "lines": [
+            29,
+            31
+          ]
+        }
+      ]
+    },
+    {
+      "id": "public-generation",
+      "from": "public",
+      "to": "generation",
+      "how": "call",
+      "text": "The routes that public serves call generation to grade candidates, write answers and translate.",
+      "provider_sources": [
+        {
+          "path": "src/med_ask/generation.py",
+          "lines": [
+            84,
+            84
+          ]
+        },
+        {
+          "path": "src/med_ask/generation.py",
+          "lines": [
+            222,
+            222
+          ]
+        }
+      ],
+      "user_sources": [
+        {
+          "path": "src/med_ask/__init__.py",
+          "lines": [
+            152,
+            153
+          ]
+        },
+        {
+          "path": "src/med_ask/__init__.py",
+          "lines": [
+            217,
+            217
+          ]
+        },
+        {
+          "path": "src/med_ask/__init__.py",
+          "lines": [
+            258,
+            258
+          ]
+        },
+        {
+          "path": "compose.yaml",
+          "lines": [
+            29,
+            31
+          ]
+        }
+      ]
+    },
+    {
+      "id": "public-navigation",
+      "from": "public",
+      "to": "navigation",
+      "how": "file",
+      "text": "public reads published navigation files from its read-only navigation mount.",
+      "provider_sources": [
+        {
+          "path": "src/med_ask/navigation.py",
+          "lines": [
+            425,
+            425
+          ]
+        }
+      ],
+      "user_sources": [
+        {
+          "path": "src/med_ask/__init__.py",
+          "lines": [
+            69,
+            72
+          ]
+        },
+        {
+          "path": "compose.yaml",
+          "lines": [
+            43,
+            43
+          ]
+        }
+      ]
+    },
+    {
+      "id": "navigation-extraction",
+      "from": "navigation",
+      "to": "extraction",
+      "how": "call",
+      "text": "The navigation builder extracts each book with extract_book before it writes the navigation file.",
+      "provider_sources": [
+        {
+          "path": "src/med_ask/extract.py",
+          "lines": [
+            1246,
+            1246
+          ]
+        }
+      ],
+      "user_sources": [
+        {
+          "path": "src/med_ask/navigation.py",
+          "lines": [
+            15,
+            15
+          ]
+        },
+        {
+          "path": "src/med_ask/navigation.py",
+          "lines": [
+            459,
+            459
+          ]
+        }
+      ]
+    },
+    {
+      "id": "private-tools-retrieval",
+      "from": "private-tools",
+      "to": "retrieval",
+      "how": "call",
+      "text": "The label suggestions call retrieval's search for the wider list.",
+      "provider_sources": [
+        {
+          "path": "src/med_ask/retrieval.py",
+          "lines": [
+            444,
+            444
+          ]
+        }
+      ],
+      "user_sources": [
+        {
+          "path": "src/med_ask/labels.py",
+          "lines": [
+            361,
+            364
+          ]
+        }
+      ]
+    },
+    {
+      "id": "documentation-schemas",
+      "from": "documentation",
+      "to": "TelesforoAleix/factory:schemas",
+      "how": "contract",
+      "contract": "claims",
+      "text": "documentation keeps docs/claims.json at version 1 of the claims schema that Factory provides.",
+      "provider_sources": [],
+      "user_sources": [
+        {
+          "path": "docs/claims.json",
+          "lines": [
+            2,
+            3
+          ]
+        },
+        {
+          "path": "tests/test_docs_links.py",
+          "lines": [
+            207,
+            207
+          ]
+        }
+      ]
+    },
+    {
+      "id": "documentation-docs-verify",
+      "from": "documentation",
+      "to": "TelesforoAleix/factory:docs-verify",
+      "how": "file",
+      "text": "Factory's docs-verify reads this repository's docs/claims.json, whose cited paths and lines the link test checks.",
+      "provider_sources": [],
+      "user_sources": [
+        {
+          "path": "docs/claims.json",
+          "lines": [
+            3,
+            3
+          ]
+        },
+        {
+          "path": "tests/test_docs_links.py",
+          "lines": [
+            191,
+            214
+          ]
+        }
+      ]
     }
   ],
   "contracts": [
@@ -7404,7 +9248,7 @@
       "doc": "docs/contracts.md",
       "doc_lines": [
         13,
-        25
+        26
       ]
     },
     {
@@ -7417,8 +9261,8 @@
       ],
       "doc": "docs/contracts.md",
       "doc_lines": [
-        27,
-        34
+        28,
+        35
       ]
     },
     {
@@ -7430,8 +9274,8 @@
       ],
       "doc": "docs/contracts.md",
       "doc_lines": [
-        36,
-        45
+        37,
+        46
       ]
     },
     {
@@ -7447,8 +9291,8 @@
       ],
       "doc": "docs/contracts.md",
       "doc_lines": [
-        47,
-        55
+        48,
+        58
       ]
     },
     {
@@ -7460,8 +9304,8 @@
       ],
       "doc": "docs/contracts.md",
       "doc_lines": [
-        57,
-        65
+        60,
+        69
       ]
     },
     {
@@ -7475,8 +9319,22 @@
       ],
       "doc": "docs/contracts.md",
       "doc_lines": [
-        67,
-        75
+        71,
+        79
+      ]
+    },
+    {
+      "name": "claims",
+      "version": "1",
+      "provider": "TelesforoAleix/factory:schemas",
+      "users": [
+        "TelesforoAleix/med-ask:documentation",
+        "TelesforoAleix/factory:docs-verify"
+      ],
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        81,
+        94
       ]
     }
   ]

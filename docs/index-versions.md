@@ -10,8 +10,9 @@ must pass are in [evaluation.md](evaluation.md).
 
 Each index is one LlamaIndex table named `e_<version>_<model stem>_<model hash>`; the
 store adds the prefix `data_`. The stem and hash come from the model the endpoint reports, so a
-changed model lands in a new table on its own. `INDEX_VERSION` (default `v2`) must be `v`
-followed by one to four digits. `medask_models` records each table's model and dimensions;
+changed model lands in a new table on its own. `INDEX_VERSION` must be `v`
+followed by one to four digits; its default is in the
+[server environment table](operations.md#server-environment). `medask_models` records each table's model and dimensions;
 ingest refuses a table whose recorded model differs, and search refuses one that is missing
 or differs ("No index yet" / "A new index is required").
 
@@ -22,18 +23,19 @@ for `embed-large` and `embed-large-bulk`, which always use the plain name.
 
 A passage id is a hash of the book id, its PDF page range and its unchanged text, so changing
 extraction changes ids, and a rebuild into a new version is how such a change is served.
-Nothing deletes or overwrites a table; never drop, delete from or rename one.
+Nothing deletes or overwrites a table; the rule that keeps them is in
+[contracts.md](contracts.md#database).
 
 ## What each version contains
 
 | Version | Index input |
 | --- | --- |
-| below `v5` | Passages only, of kinds content, summary, glossary, exercise and references |
+| below `v5` | Passages only, of every kind in [extraction.md](extraction.md#kinds) |
 | `v5` | Adds kind `figure`: printed labels and captions, with whole Passarge plates |
 | `v6` and later | As v5, with Passarge plates split into lettered panels |
 
-Search filters to content, summary and glossary in every version. Figure details are in
-[figures.md](figures.md).
+The kinds search returns are listed in [extraction.md](extraction.md#kinds), and apply to
+every version. Figure details are in [figures.md](figures.md).
 
 ## Build a new version
 

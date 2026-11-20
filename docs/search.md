@@ -11,7 +11,7 @@ log, or the browser's search screen in `frontend/src/`. Retrieval internals are 
 `POST /api/search` accepts `{"question": "…"}` of 1–4,000 characters after NUL characters are
 removed. Every valid question is logged before search, including attempts with no index. The
 app embeds the question once, retrieves `PASSAGE_CANDIDATES` passages (default 26) through
-LlamaIndex and, from v5, up to `FIGURE_CANDIDATES` figures (default 4), then sends the question
+LlamaIndex and, from v5, up to `FIGURE_CANDIDATES` figures ([figures.md](figures.md#figures-in-search)), then sends the question
 and one candidate per `grade` call. The passage count must stay at least 10 to keep the
 eval's Hit@10 meaningful.
 
